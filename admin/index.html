@@ -120,6 +120,7 @@
         <button class="soft-btn whitespace-nowrap" data-tab="resenas">⭐ Reseñas</button>
         <button class="soft-btn whitespace-nowrap" data-tab="usuarios">👥 Usuarios</button>
         <button class="soft-btn whitespace-nowrap" data-tab="categorias">🏷️ Categorías</button>
+        <button class="soft-btn whitespace-nowrap" data-tab="cobros">Métodos de cobro</button>
         <button class="soft-btn whitespace-nowrap" data-tab="datos">⚙️ Sistema</button>
       </div>
     </div>
@@ -135,6 +136,7 @@
     import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js';
     import { initializeFirestore, collection, doc, getDoc, getDocs, updateDoc, deleteDoc, addDoc, query, orderBy, limit, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
     import { firebaseConfig } from './firebase-config.js';
+    import {renderPaymentSettings} from '../payment-settings.js';
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -197,7 +199,7 @@
       try {
         const userDoc = await getDoc(doc(db, 'users', u.uid));
         const role = userDoc.exists() ? userDoc.data().role : 'user';
-        if (role !== 'admin') {
+        if (role !== 'admin' || userDoc.data().disabled === true) {
           $('#authContainer').classList.add('hidden');
           $('#dashboardContainer').classList.add('hidden');
           $('#deniedContainer').classList.remove('hidden');
@@ -296,6 +298,7 @@
         if (tab === 'resumen') await renderResumen(container);
         else if (tab === 'negocios') await renderNegocios(container);
         else if (tab === 'pagos') await renderPagos(container);
+        else if (tab === 'cobros') await renderPaymentSettings(container, db, toast);
         else if (tab === 'eventos') await renderEventos(container);
         else if (tab === 'resenas') await renderResenas(container);
         else if (tab === 'usuarios') await renderUsuarios(container);

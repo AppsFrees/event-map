@@ -1,6 +1,6 @@
-const CACHE_NAME = 'eventmaps-shell-v4-ui';
+const CACHE_NAME = 'eventmaps-shell-v5-payments';
 const SCOPE_URL = new URL(self.registration.scope);
-const APP_SHELL = ['./', './index.html', './app.js', './firebase-config.js', './manifest.webmanifest', './privacy.html', './favicon-32.png', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
+const APP_SHELL = ['./payment-settings.js', './map-premium.css', './', './index.html', './app.js', './firebase-config.js', './manifest.webmanifest', './privacy.html', './favicon-32.png', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 const inScope = url => url.origin === SCOPE_URL.origin && url.pathname.startsWith(SCOPE_URL.pathname);
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));

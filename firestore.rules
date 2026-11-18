@@ -12,7 +12,7 @@ service cloud.firestore {
     function userDoc() { return get(/databases/$(database)/documents/users/$(uid())); }
     function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/users/$(uid())); }
     function role() { return hasProfile() ? userDoc().data.role : 'guest'; }
-    function isDisabled() { return hasProfile() && userDoc().data.disabled == true; }
+    function isDisabled() { return hasProfile() && userDoc().data.get('disabled', false) == true; }
     function isAdmin() { return signedIn() && !isDisabled() && role() == 'admin'; }
     function emailVerified() {
       return signedIn() && !isDisabled() && (request.auth.token.email_verified == true
@@ -241,6 +241,25 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid','email','status','createdAt']);
       allow get, list: if signedIn() && (resource.data.uid == uid() || isAdmin());
       allow update, delete: if isAdmin();
+    }
+
+    match /settings/payments {
+      function valid(d) {
+        return d.keys().hasAll(['yapeEnabled','yapeNumber','yapeHolder','plinEnabled','plinNumber','plinHolder','paypalEnabled','paypalEmail','paypalUrl','updatedAt'])
+          && d.keys().hasOnly(['yapeEnabled','yapeNumber','yapeHolder','plinEnabled','plinNumber','plinHolder','paypalEnabled','paypalEmail','paypalUrl','updatedAt'])
+          && d.yapeEnabled is bool && d.plinEnabled is bool && d.paypalEnabled is bool
+          && str(d.yapeNumber,0,9) && str(d.plinNumber,0,9) && str(d.yapeHolder,0,100) && str(d.plinHolder,0,100)
+          && str(d.paypalEmail,0,254) && str(d.paypalUrl,0,500)
+          && (!d.yapeEnabled || (d.yapeNumber.matches('^9[0-9]{8}$') && d.yapeHolder.size()>0))
+          && (!d.plinEnabled || (d.plinNumber.matches('^9[0-9]{8}$') && d.plinHolder.size()>0))
+          && (d.paypalEmail=='' || d.paypalEmail.matches('^[^ @]+@[^ @]+[.][^ @]+$'))
+          && (d.paypalUrl=='' || d.paypalUrl.matches('^https://(www[.])?paypal[.]me/[^ @]*$') || d.paypalUrl.matches('^https://(www[.])?paypal[.]com/[^ @]*$'))
+          && (!d.paypalEnabled || d.paypalEmail.size()>0 || d.paypalUrl.size()>0)
+          && d.updatedAt == request.time;
+      }
+      allow get: if true;
+      allow create, update: if isAdmin() && valid(request.resource.data);
+      allow delete: if false;
     }
 
     // Todo lo demás, cerrado.
