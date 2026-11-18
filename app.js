@@ -14,6 +14,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
 import { getMessaging, getToken, deleteToken, isSupported as messagingSupported } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-messaging.js';
 import { firebaseConfig, appSettings } from './firebase-config.js';
+import {getPaymentSettings, enabledMethods, paymentDetails, wirePaymentCopy, paymentRevision, renderPaymentSettings, whatsappURL, installMapEffects, getAmountPEN, getAmountUSD, planLabel} from './payment-settings.js';
 
 
 // ---------------------------------------------------------------------------
@@ -141,6 +142,7 @@ function savePrefs() {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyPrefs);
 applyPrefs();
+installMapEffects();
 
 // ---------------------------------------------------------------------------
 // Mapa
@@ -244,13 +246,14 @@ function redraw() {
     const label = b.name.length > 12 ? b.name.slice(0, 11) + '…' : b.name;
     const evCount = activeEvents(b.id).length;
     const markerVisual = b.mapImage ? `<img class="map-logo" src="${esc(b.mapImage)}" alt="">` : `<span class="emoji" aria-hidden="true">${iconFor(b.category)}</span>`;
-    const html = `<div class="bubble ${esc((b.plan || 'free').toLowerCase())}">${markerVisual}${esc(label)}${state.favorites.has(b.id) ? '<span class="fav" aria-hidden="true">♥</span>' : ''}</div>`;
+    const html = `<div class="bubble ${esc((b.plan || 'free').toLowerCase())}">${markerVisual}<span class="marker-name">${esc(label)}</span>${b.plan !== 'Free' ? `<span class="marker-plan">${esc(planLabel(b.plan))}</span>` : ''}${whatsappURL(b) ? `<a class="marker-wa" href="${esc(whatsappURL(b))}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp de ${esc(b.name)}">WhatsApp ↗</a>` : ''}${state.favorites.has(b.id) ? '<span class="fav" aria-hidden="true">♥</span>' : ''}</div>`;
     const m = L.marker([b.lat, b.lng], {
-      icon: L.divIcon({ className: 'bubble-wrap', html, iconSize: [100, 58], iconAnchor: [50, 54] }),
+      icon: L.divIcon({ className: 'bubble-wrap', html, iconSize: [112, whatsappURL(b) ? 112 : 78], iconAnchor: [56, whatsappURL(b) ? 108 : 74] }),
       title: `${b.name}, ${b.category}${evCount ? `, ${evCount} eventos` : ''}`, alt: b.name, keyboard: true, riseOnHover: true
     }).addTo(markerLayer);
-    m.on('click', () => openBusiness(b.id));
-    m.on('keypress', e => { if (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ') openBusiness(b.id); });
+    m.on('click', e => {if(!e.originalEvent?.target?.closest?.('.marker-wa'))openBusiness(b.id);});
+    const wa=m.getElement()?.querySelector('.marker-wa');if(wa){L.DomEvent.disableClickPropagation(wa);L.DomEvent.disableScrollPropagation(wa);wa.addEventListener('keydown',event=>event.stopPropagation());}
+    m.on('keypress', e => { if(e.originalEvent.target?.closest?.('.marker-wa'))return; if (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ') openBusiness(b.id); });
   });
 }
 
@@ -946,10 +949,16 @@ function openRegistration() {
     <section id="registrationPayment" class="banner info" hidden><strong class="block text-sm">4. Datos de pago</strong><p class="text-xs mt-1">Completa estos datos antes de enviar la solicitud. El plan se activa solo después de la verificación administrativa.</p><div class="field"><label for="regMethod">Método</label><select id="regMethod" name="paymentMethod"><option value="yape">Yape</option><option value="plin">Plin</option><option value="paypal">PayPal</option><option value="stripe">Tarjeta</option></select></div><div class="field"><label for="regOperation">Código de operación</label><input id="regOperation" name="operationCode" maxlength="40"></div><div class="field"><label for="regVoucher">Comprobante</label><input id="regVoucher" type="file" accept="image/jpeg,image/png,image/webp"></div></section>
     <button class="main-btn mt-3" type="submit">Enviar solicitud</button></form>`);
   const pos = wireLocationPicker();
-  const updateRegistrationPlan = () => { const paid = $('#modal input[name=plan]:checked').value !== 'Free'; $('#registrationPayment').hidden = !paid; $$('.plan', $('#modal')).forEach(p => p.classList.toggle('selected', p.querySelector('input').checked)); };
+  let registrationSettings=null,registrationSending=false,registrationDraft=null,registeredBusiness=null;
+  const regSelect=$('#regMethod'),details=document.createElement('div');regSelect.closest('.field').after(details);
+  regSelect.innerHTML='<option value="">Consultando cobros…</option>';
+  const updateRegPayment=()=>{details.innerHTML=registrationSettings?paymentDetails(registrationSettings,regSelect.value,$('#modal input[name=plan]:checked')?.value||'Standard'):'<p class="muted text-xs">Cobros no disponibles. El registro gratuito sigue disponible.</p>';wirePaymentCopy(details,toast);};
+  regSelect.onchange=updateRegPayment;
+  getPaymentSettings(db).then(data=>{if(!regSelect.isConnected)return;registrationSettings=data;regSelect.innerHTML=enabledMethods(data).map(m=>`<option value="${m}">${m==='paypal'?'PayPal':m==='yape'?'Yape':'Plin'}</option>`).join('')||'<option value="">Sin métodos habilitados</option>';updateRegPayment();}).catch(()=>{if(regSelect.isConnected){regSelect.innerHTML='<option value="">Cobros no disponibles</option>';updateRegPayment();}});
+  const updateRegistrationPlan = () => { const paid = $('#modal input[name=plan]:checked').value !== 'Free'; $('#registrationPayment').hidden = !paid; $$('.plan', $('#modal')).forEach(p => p.classList.toggle('selected', p.querySelector('input').checked)); updateRegPayment(); };
   $$('input[name=plan]', $('#modal')).forEach(r => r.onchange = updateRegistrationPlan);
   $('#registerForm').onsubmit = async e => {
-    e.preventDefault(); const fd = new FormData(e.target);
+    e.preventDefault();if(registrationSending)return; const fd = registrationDraft || new FormData(e.target);
     const address = $('#addrInput').value.trim();
     if (address.length < 3) { toast('Escribe la dirección del negocio.'); return; }
     const country = String(fd.get('country') || 'Perú').trim();
@@ -957,16 +966,25 @@ function openRegistration() {
     const district = String(fd.get('district') || '').trim();
     const plan = String(fd.get('plan')), paymentFile = $('#regVoucher').files[0], operationCode = $('#regOperation').value.trim(), method = String(fd.get('paymentMethod') || '');
     if (plan !== 'Free' && (!paymentFile || operationCode.length < 3)) { toast('Para Standard o Gold adjunta comprobante y código de operación.'); return; }
+    if(plan!=='Free'&&(!registrationSettings||!enabledMethods(registrationSettings).includes(method))){toast('Selecciona un método de cobro habilitado.');return;}
+    const submit=e.target.querySelector('button[type=submit]');registrationSending=true;submit.disabled=true;
     try {
-      const created = await addDoc(collection(db, 'businesses'), {
+      let voucher='';
+      if(plan!=='Free'){
+        const latest=await getPaymentSettings(db);if(paymentRevision(latest)!==paymentRevision(registrationSettings))throw new Error('Los datos de cobro cambiaron. Contacta al administrador si ya pagaste.');
+        if(!/^image\/(jpeg|png|webp)$/.test(paymentFile.type))throw new Error('Usa JPG, PNG o WebP.');
+        voucher=await compressToBudget(paymentFile,400*1024);if(voucher.length>600000)throw new Error('Comprobante demasiado pesado.');
+      }
+      const created = registeredBusiness || await addDoc(collection(db, 'businesses'), {
         ownerUid: state.user.uid, ownerEmail: state.user.email, name: String(fd.get('name')).trim(), category: String(fd.get('category')),
         plan, country, department, district, address, lat: pos.lat, lng: pos.lng, mapImage: '', description: '', hours: '', socials: { wa: '', fb: '', ig: '', tt: '', web: '' },
         photos: [], promo: false, paused: false, status: 'pending', subscriptionActive: false, subscriptionEnd: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp()
       });
-      if (plan !== 'Free') { const voucher = await compressToBudget(paymentFile, 400 * 1024); await addDoc(collection(db, 'payments'), { businessId: created.id, businessName: String(fd.get('name')).trim(), ownerUid: state.user.uid, ownerEmail: state.user.email, plan, amount: method === 'paypal' ? getAmountUSD(plan) : getAmountPEN(plan), currency: method === 'paypal' ? 'USD' : 'PEN', method, operationCode, voucher, status: 'pending_verification', createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); }
+      registeredBusiness=created;registrationDraft=fd;
+      if (plan !== 'Free') { await addDoc(collection(db, 'payments'), { businessId: created.id, businessName: String(fd.get('name')).trim(), ownerUid: state.user.uid, ownerEmail: state.user.email, plan, amount: method === 'paypal' ? getAmountUSD(plan) : getAmountPEN(plan), currency: method === 'paypal' ? 'USD' : 'PEN', method, operationCode, voucher, status: 'pending_verification', createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); }
       hideModal(); track('business_signup', { plan });
       toast(plan === 'Free' ? 'Solicitud enviada. Te avisaremos cuando sea aprobada.' : 'Solicitud y comprobante enviados para verificación.');
-    } catch (err) { toast(errMsg(err)); }
+    } catch (err) { toast((registeredBusiness?'Negocio registrado; reintenta el comprobante sin cerrar esta ventana. ':'')+errMsg(err)); }finally{registrationSending=false;if(submit.isConnected)submit.disabled=false;}
   };
 }
 $('#addBusiness').onclick = openRegistration;
@@ -1105,176 +1123,29 @@ function wireEditor(root) {
 // ---------------------------------------------------------------------------
 // Pasarelas de Pago: Yape, Plin, PayPal, Stripe
 // ---------------------------------------------------------------------------
-function openPaymentModal(b) {
-  let selectedPlan = b.plan === 'Pro' ? 'Pro' : 'Standard';
-  let selectedMethod = 'yape';
-
-  const getAmountPEN = plan => plan === 'Pro' ? 49 : 19;
-  const getAmountUSD = plan => plan === 'Pro' ? 15 : 5;
-
-  const renderModalContent = () => {
-    const pen = getAmountPEN(selectedPlan);
-    const usd = getAmountUSD(selectedPlan);
-
-    let methodDetailsHTML = '';
-    if (selectedMethod === 'yape') {
-      methodDetailsHTML = `
-        <div class="admin-card text-center" style="background:#74228412;border:2px solid #742284">
-          <div class="flex items-center justify-center gap-2 mb-2">
-            <span style="background:#742284;color:#fff;font-weight:900;padding:4px 12px;border-radius:12px;font-size:1.1rem">Yape</span>
-            <strong style="color:#742284;font-size:1.4rem">S/. ${pen}.00</strong>
-          </div>
-          <p class="text-xs muted">Yapea al número oficial de EventMaps Perú:</p>
-          <div class="flex items-center justify-center gap-2 my-2">
-            <span class="text-xl font-black" style="letter-spacing:1px;color:var(--text)">987 654 321</span>
-            <button type="button" class="soft-btn text-xs" id="copyYape">📋 Copiar</button>
-          </div>
-          <p class="text-xs font-semibold muted">Titular: EventMaps Oficial (BCP)</p>
-          <div class="mt-3 p-2 bg-white rounded-xl inline-block shadow-sm">
-            <div id="yapeQrCode"></div>
-          </div>
-          <p class="text-xs muted mt-1">Escanea desde tu app Yape o transfiere al número.</p>
-        </div>`;
-    } else if (selectedMethod === 'plin') {
-      methodDetailsHTML = `
-        <div class="admin-card text-center" style="background:#00d2c414;border:2px solid #00d2c4">
-          <div class="flex items-center justify-center gap-2 mb-2">
-            <span style="background:#00d2c4;color:#003934;font-weight:900;padding:4px 12px;border-radius:12px;font-size:1.1rem">Plin</span>
-            <strong style="color:#00998f;font-size:1.4rem">S/. ${pen}.00</strong>
-          </div>
-          <p class="text-xs muted">Plinea al número oficial desde BBVA, Interbank o Scotiabank:</p>
-          <div class="flex items-center justify-center gap-2 my-2">
-            <span class="text-xl font-black" style="letter-spacing:1px;color:var(--text)">987 654 321</span>
-            <button type="button" class="soft-btn text-xs" id="copyPlin">📋 Copiar</button>
-          </div>
-          <p class="text-xs font-semibold muted">Titular: EventMaps Oficial</p>
-        </div>`;
-    } else if (selectedMethod === 'paypal') {
-      methodDetailsHTML = `
-        <div class="admin-card text-center" style="background:#00308714;border:2px solid #003087">
-          <div class="flex items-center justify-center gap-2 mb-2">
-            <span style="background:#003087;color:#fff;font-weight:900;padding:4px 12px;border-radius:12px;font-size:1.1rem">PayPal</span>
-            <strong style="color:#003087;font-size:1.4rem">$${usd}.00 USD</strong>
-          </div>
-          <p class="text-xs muted">Paga con saldo PayPal o tarjeta internacional:</p>
-          <a href="https://paypal.me/eventmaps/${usd}" target="_blank" rel="noopener" class="main-btn inline-block text-center mt-3" style="background:#0070ba;max-width:280px;text-decoration:none">
-            Abrir PayPal Checkout ↗
-          </a>
-        </div>`;
-    } else if (selectedMethod === 'stripe') {
-      methodDetailsHTML = `
-        <div class="admin-card text-center" style="background:#635bff14;border:2px solid #635bff">
-          <div class="flex items-center justify-center gap-2 mb-2">
-            <span style="background:#635bff;color:#fff;font-weight:900;padding:4px 12px;border-radius:12px;font-size:1.1rem">Tarjeta</span>
-            <strong style="color:#635bff;font-size:1.4rem">S/. ${pen}.00 / $${usd}.00</strong>
-          </div>
-          <p class="text-xs muted">Acepta Visa, MasterCard y American Express vía Stripe Checkout:</p>
-          <a href="https://buy.stripe.com/test_eventmaps_${selectedPlan.toLowerCase()}" target="_blank" rel="noopener" class="main-btn inline-block text-center mt-3" style="background:#635bff;max-width:280px;text-decoration:none">
-            Pagar con Tarjeta (Stripe) ↗
-          </a>
-        </div>`;
-    }
-
-    showModal(`
-      ${modalHeader('Planes y Suscripción', `Negocio: ${esc(b.name)}`)}
-      <div class="mt-3">
-        <label class="label font-bold text-xs mb-1 block">1. Selecciona el Plan</label>
-        <div class="grid grid-cols-2 gap-2">
-          <button type="button" class="plan ${selectedPlan === 'Standard' ? 'selected' : ''}" id="selPlanStd">
-            <strong>Standard</strong>
-            <span class="text-sm font-extrabold text-indigo-600 block my-1">S/. 19 / mes ($5 USD)</span>
-            <span class="muted text-xs">Hasta 3 fotos · 3 eventos simultáneos</span>
-          </button>
-          <button type="button" class="plan ${selectedPlan === 'Pro' ? 'selected' : ''}" id="selPlanPro">
-            <strong>Pro (Destacado) ★</strong>
-            <span class="text-sm font-extrabold text-amber-600 block my-1">S/. 49 / mes ($15 USD)</span>
-            <span class="muted text-xs">Hasta 5 fotos · 10 eventos · Pin dorado destacado · Cupones QR</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="mt-4">
-        <label class="label font-bold text-xs mb-1 block">2. Método de Pago</label>
-        <div class="grid grid-cols-4 gap-1">
-          <button type="button" class="soft-btn text-xs py-2 px-1 text-center" id="mYape" aria-pressed="${selectedMethod === 'yape'}">🟣 Yape</button>
-          <button type="button" class="soft-btn text-xs py-2 px-1 text-center" id="mPlin" aria-pressed="${selectedMethod === 'plin'}">🔵 Plin</button>
-          <button type="button" class="soft-btn text-xs py-2 px-1 text-center" id="mPayPal" aria-pressed="${selectedMethod === 'paypal'}">💳 PayPal</button>
-          <button type="button" class="soft-btn text-xs py-2 px-1 text-center" id="mStripe" aria-pressed="${selectedMethod === 'stripe'}">🌐 Tarjeta</button>
-        </div>
-        <div class="mt-2">${methodDetailsHTML}</div>
-      </div>
-
-      <form id="paymentForm" class="mt-4 border-t border-line pt-3">
-        <label class="label font-bold text-xs mb-2 block">3. Reportar Comprobante</label>
-        <div class="field">
-          <label for="vFile">Foto del Comprobante / Voucher (Captura) *</label>
-          <input type="file" id="vFile" accept="image/jpeg,image/png,image/webp" required class="input">
-          <p class="muted text-xs">Se comprime automáticamente para no consumir almacenamiento.</p>
-        </div>
-        <div class="field">
-          <label for="opCode">Número de Operación o ID de Transacción *</label>
-          <input id="opCode" class="input" required maxlength="40" placeholder="Ej. 849302">
-        </div>
-        <button type="submit" class="main-btn mt-3" id="sendPayBtn">Enviar Comprobante para Activación</button>
-      </form>
-    `);
-
-    if (selectedMethod === 'yape') {
-      const qrBox = $('#yapeQrCode');
-      if (qrBox && window.QRCode) {
-        new QRCode(qrBox, { text: `0002010102115303604540${pen}.005802PE5915EVENTMAPS PERU6004LIMA62160112987654321`, width: 120, height: 120 });
-      }
-    }
-
-    const copyY = $('#copyYape'); if (copyY) copyY.onclick = () => { navigator.clipboard.writeText('987654321'); toast('Número 987654321 copiado.'); };
-    const copyP = $('#copyPlin'); if (copyP) copyP.onclick = () => { navigator.clipboard.writeText('987654321'); toast('Número 987654321 copiado.'); };
-
-    $('#selPlanStd').onclick = () => { selectedPlan = 'Standard'; renderModalContent(); };
-    $('#selPlanPro').onclick = () => { selectedPlan = 'Pro'; renderModalContent(); };
-    $('#mYape').onclick = () => { selectedMethod = 'yape'; renderModalContent(); };
-    $('#mPlin').onclick = () => { selectedMethod = 'plin'; renderModalContent(); };
-    $('#mPayPal').onclick = () => { selectedMethod = 'paypal'; renderModalContent(); };
-    $('#mStripe').onclick = () => { selectedMethod = 'stripe'; renderModalContent(); };
-
-    $('#paymentForm').onsubmit = async e => {
-      e.preventDefault();
-      const files = $('#vFile').files;
-      const code = $('#opCode').value.trim();
-      if (!files.length) { toast('Selecciona la foto de tu comprobante.'); return; }
-      if (!code) { toast('Escribe el número de operación.'); return; }
-      const btn = $('#sendPayBtn');
-      btn.disabled = true; btn.textContent = 'Enviando comprobante…';
-      try {
-        const voucherData = await compressToBudget(files[0], 400 * 1024);
-        const amount = selectedMethod === 'paypal' ? getAmountUSD(selectedPlan) : getAmountPEN(selectedPlan);
-        const currency = selectedMethod === 'paypal' ? 'USD' : 'PEN';
-        await addDoc(collection(db, 'payments'), {
-          businessId: b.id,
-          businessName: b.name,
-          ownerUid: state.user.uid,
-          ownerEmail: state.user.email,
-          plan: selectedPlan,
-          amount,
-          currency,
-          method: selectedMethod,
-          operationCode: code,
-          voucher: voucherData,
-          status: 'pending_verification',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-        hideModal();
-        toast('¡Comprobante enviado! El administrador verificará tu pago y activará tu plan.');
-        track('payment_submitted', { plan: selectedPlan, method: selectedMethod });
-      } catch (err) {
-        toast(errMsg(err));
-        btn.disabled = false;
-        btn.textContent = 'Enviar Comprobante para Activación';
-      }
+async function openPaymentModal(b) {
+  if(!state.user){openAuth();return;}
+  let settings;try{settings=await getPaymentSettings(db);}catch{toast('No se pudieron consultar los datos de cobro. Revisa la conexión o contacta al administrador.');return;}
+  const methods=enabledMethods(settings);if(!methods.length){toast('No hay métodos de cobro habilitados. Contacta al administrador.');return;}
+  let plan=b.plan==='Pro'?'Pro':'Standard', method=methods[0], sending=false;
+  const render=()=>{
+    showModal(`${modalHeader('Planes y suscripción',esc(b.name))}<div class="plan-grid mt-3">${['Standard','Pro'].map(p=>`<button class="plan ${plan===p?'selected':''}" data-buy-plan="${p}"><strong>${planLabel(p)}</strong>S/ ${getAmountPEN(p)} / mes<br>USD ${getAmountUSD(p)}</button>`).join('')}</div><div class="flex gap-2 mt-3">${methods.map(m=>`<button class="soft-btn" data-buy-method="${m}" aria-pressed="${method===m}">${m==='paypal'?'PayPal':m==='yape'?'Yape':'Plin'}</button>`).join('')}</div>${paymentDetails(settings,method,plan)}<form id="paymentForm"><div class="field"><label for="vFile">Comprobante JPG, PNG o WebP</label><input id="vFile" type="file" accept="image/jpeg,image/png,image/webp" required></div><div class="field"><label for="opCode">Código de operación</label><input id="opCode" minlength="3" maxlength="40" required></div><p class="muted text-xs">Verificación administrativa obligatoria antes de activar el plan.</p><button class="main-btn mt-3" id="sendPayBtn">Enviar comprobante</button></form>`);
+    const root=$('#modal');wirePaymentCopy(root,toast);
+    root.querySelectorAll('[data-buy-plan]').forEach(button=>button.onclick=()=>{if(!sending){plan=button.dataset.buyPlan;render();}});
+    root.querySelectorAll('[data-buy-method]').forEach(button=>button.onclick=()=>{if(!sending){method=button.dataset.buyMethod;render();}});
+    $('#paymentForm').onsubmit=async event=>{
+      event.preventDefault();if(sending)return;
+      const file=$('#vFile').files[0],code=$('#opCode').value.trim(),account=state.user;
+      if(!account||!file||!/^image\/(jpeg|png|webp)$/.test(file.type)||code.length<3){toast('Verifica la sesión, el comprobante y el código.');return;}
+      const button=$('#sendPayBtn');sending=true;button.disabled=true;root.querySelectorAll('[data-buy-plan],[data-buy-method]').forEach(x=>x.disabled=true);
+      try{
+        const latest=await getPaymentSettings(db);if(paymentRevision(latest)!==paymentRevision(settings))throw new Error('Los datos de cobro cambiaron. Reabre esta ventana; si ya pagaste, contacta al administrador.');
+        const voucher=await compressToBudget(file,400*1024);if(voucher.length>600000)throw new Error('Comprobante demasiado pesado.');
+        await addDoc(collection(db,'payments'),{businessId:b.id,businessName:b.name,ownerUid:account.uid,ownerEmail:account.email,plan,method,amount:method==='paypal'?getAmountUSD(plan):getAmountPEN(plan),currency:method==='paypal'?'USD':'PEN',operationCode:code,voucher,status:'pending_verification',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        if(button.isConnected)hideModal();toast('Comprobante enviado para verificación.');
+      }catch(error){toast(errMsg(error));if(button.isConnected){button.disabled=false;root.querySelectorAll('[data-buy-plan],[data-buy-method]').forEach(x=>x.disabled=false);}}finally{sending=false;}
     };
-  };
-
-  renderModalContent();
+  };render();
 }
 
 // ---------------------------------------------------------------------------
@@ -1288,6 +1159,7 @@ async function openAdmin(tab = adminTab) {
     ['resumen', 'Resumen'],
     ['negocios', 'Negocios'],
     ['pagos', '💳 Pagos'],
+    ['cobros', 'Métodos de cobro'],
     ['eventos', 'Eventos'],
     ['resenas', 'Reseñas'],
     ['usuarios', 'Usuarios'],
@@ -1303,6 +1175,7 @@ async function openAdmin(tab = adminTab) {
       resumen: adminSummary,
       negocios: adminBusinesses,
       pagos: adminPayments,
+      cobros: () => renderPaymentSettings($('#adminBody'), db, toast),
       eventos: adminEvents,
       resenas: adminReviews,
       usuarios: adminUsers,
