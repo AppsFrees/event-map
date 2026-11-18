@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="auto">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#4338ca" />
+  <meta name="description" content="App de Administración Oficial de EventMaps" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+  <title>EventMaps Admin</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{color-scheme:light;--bg:#f8fafc;--text:#0f172a;--muted:#64748b;--card:#ffffff;--line:#e2e8f0;--shadow:0 10px 25px rgba(0,0,0,0.06);--primary:#4338ca;--primary-text:#4338ca}
+    html[data-theme="dark"]{color-scheme:dark;--bg:#0b0f19;--text:#f8fafc;--muted:#94a3b8;--card:#131b2e;--line:#1e293b;--shadow:0 10px 25px rgba(0,0,0,0.4);--primary-text:#818cf8}
+    @media(prefers-color-scheme:dark){html[data-theme="auto"]{color-scheme:dark;--bg:#0b0f19;--text:#f8fafc;--muted:#94a3b8;--card:#131b2e;--line:#1e293b;--shadow:0 10px 25px rgba(0,0,0,0.4);--primary-text:#818cf8}}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+    button,input,select,textarea{font:inherit}button{cursor:pointer}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow)}
+    .main-btn{background:#4338ca;color:#fff;border:0;border-radius:12px;padding:12px 18px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+    .main-btn:disabled{opacity:0.6;cursor:not-allowed}
+    .soft-btn{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-size:0.8rem;font-weight:700}
+    .soft-btn[aria-selected="true"],.soft-btn.active{background:#4338ca;color:#fff;border-color:#4338ca}
+    .soft-btn.success{background:#059669;color:#fff;border-color:#059669}
+    .soft-btn.danger{background:#dc2626;color:#fff;border-color:#dc2626}
+    .input{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 14px;width:100%}
+    .pill{font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:999px;white-space:nowrap}
+    .pill.ok{background:#dcfce7;color:#166534}
+    .pill.warn{background:#fef3c7;color:#92400e}
+    .pill.bad{background:#fee2e2;color:#991b1b}
+    .pill.info{background:#dbeafe;color:#1e40af}
+    .pill.gray{background:#e2e8f0;color:#334155}
+    .tabs-scroll{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+    .tabs-scroll::-webkit-scrollbar{display:none}
+    .toast{position:fixed;z-index:9999;top:calc(15px + env(safe-area-inset-top));left:50%;transform:translate(-50%,-20px);opacity:0;pointer-events:none;background:#0f172a;color:#fff;padding:12px 20px;border-radius:12px;font-size:0.85rem;box-shadow:var(--shadow);transition:0.2s}
+    .toast.show{opacity:1;transform:translate(-50%,0)}
+    table.simple{width:100%;border-collapse:collapse;font-size:0.82rem}
+    table.simple th,table.simple td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}
+    .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+    .kpi-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+    .kpi-card strong{font-size:1.5rem;display:block}
+    .modal-backdrop{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;padding:16px}
+    .modal-backdrop.show{display:flex}
+    .modal{background:var(--card);border:1px solid var(--line);border-radius:20px;max-width:600px;width:100%;max-height:88vh;overflow-y:auto;padding:20px}
+  </style>
+</head>
+<body>
+  <div id="toast" class="toast" role="status"></div>
+  <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent" class="modal"></div></div>
+
+  <!-- Header -->
+  <header class="border-b border-line bg-card sticky top-0 z-50 px-4 py-3 flex items-center justify-between" style="padding-top:calc(12px + env(safe-area-inset-top))">
+    <div class="flex items-center gap-2">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-700 to-purple-700 flex items-center justify-center text-white font-black text-xl shadow-md">🛡️</div>
+      <div>
+        <h1 class="font-extrabold text-sm sm:text-base leading-tight">EventMaps Admin</h1>
+        <p class="text-[11px] muted" id="adminUserEmail">Panel de Control</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="themeToggle" class="soft-btn px-2" title="Cambiar tema">🌙</button>
+      <button id="refreshBtn" class="soft-btn px-2" title="Recargar datos">🔄</button>
+      <button id="changePasswordBtn" class="soft-btn hidden px-3 text-xs" title="Cambiar contraseña">Clave</button>
+      <button id="logoutBtn" class="soft-btn danger hidden px-3 text-xs" title="Cerrar sesión">Salir</button>
+    </div>
+  </header>
+
+  <!-- Login Container -->
+  <main id="authContainer" class="max-w-md mx-auto p-4 sm:p-6 mt-8">
+    <div class="card text-center">
+      <div class="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-500 mx-auto flex items-center justify-center text-3xl mb-3">🛡️</div>
+      <h2 class="text-xl font-extrabold mb-1">Acceso Administrativo</h2>
+      <p class="text-xs muted mb-5">Inicia sesión con tu cuenta con permisos de administrador</p>
+      
+      <button id="googleLoginBtn" class="soft-btn w-full mb-3 py-3 flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
+        Continuar con Google
+      </button>
+
+      <div class="flex items-center gap-3 my-3">
+        <div class="flex-1 h-px bg-line"></div>
+        <span class="text-xs muted font-semibold">o con correo</span>
+        <div class="flex-1 h-px bg-line"></div>
+      </div>
+
+      <form id="loginForm" class="space-y-3 text-left">
+        <div>
+          <label class="text-xs font-bold block mb-1" for="adminEmail">Correo electrónico</label>
+          <input id="adminEmail" type="email" class="input" required value="rentafullmarket@gmail.com" autocomplete="username">
+        </div>
+        <div>
+          <label class="text-xs font-bold block mb-1" for="adminPass">Contraseña</label>
+          <input id="adminPass" type="password" class="input" required minlength="6" placeholder="••••••••">
+        </div>
+        <button type="submit" class="main-btn w-full mt-2" id="submitLoginBtn">Entrar como Administrador</button>
+      </form>
+      <button id="forgotPasswordBtn" type="button" class="link-btn mt-4 text-xs">Olvidé o quiero restablecer mi contraseña</button>
+    </div>
+  </main>
+
+  <!-- Access Denied Alert -->
+  <div id="deniedContainer" class="max-w-md mx-auto p-4 sm:p-6 mt-8 hidden">
+    <div class="card text-center border-red-500/40">
+      <div class="text-4xl mb-3">⛔</div>
+      <h2 class="text-xl font-black text-red-500 mb-2">Acceso Denegado</h2>
+      <p class="text-sm muted mb-4">La cuenta logueada no posee el rol <code class="text-indigo-500 font-bold">admin</code> en Firestore. Solo administradores autorizados pueden usar esta app.</p>
+      <button id="deniedLogoutBtn" class="main-btn w-full">Cerrar Sesión</button>
+    </div>
+  </div>
+
+  <!-- Dashboard Container -->
+  <main id="dashboardContainer" class="max-w-6xl mx-auto p-3 sm:p-6 hidden">
+    <div class="sticky top-[60px] z-40 bg-[var(--bg)] pt-2 pb-3 mb-4">
+      <div class="tabs-scroll" role="tablist">
+        <button class="soft-btn active whitespace-nowrap" data-tab="resumen">📊 Resumen</button>
+        <button class="soft-btn whitespace-nowrap" data-tab="pagos">💳 Pagos <span id="badgePay" class="hidden pill warn py-0 px-1 ml-1 text-[10px]">0</span></button>
+        <button class="soft-btn whitespace-nowrap" data-tab="negocios">🏪 Negocios <span id="badgeBiz" class="hidden pill warn py-0 px-1 ml-1 text-[10px]">0</span></button>
+        <button class="soft-btn whitespace-nowrap" data-tab="eventos">📅 Eventos <span id="badgeEv" class="hidden pill warn py-0 px-1 ml-1 text-[10px]">0</span></button>
+        <button class="soft-btn whitespace-nowrap" data-tab="resenas">⭐ Reseñas</button>
+        <button class="soft-btn whitespace-nowrap" data-tab="usuarios">👥 Usuarios</button>
+        <button class="soft-btn whitespace-nowrap" data-tab="categorias">🏷️ Categorías</button>
+        <button class="soft-btn whitespace-nowrap" data-tab="datos">⚙️ Sistema</button>
+      </div>
+    </div>
+
+    <div id="tabContent" class="space-y-4">
+      <p class="text-sm muted p-4 text-center">Cargando...</p>
+    </div>
+  </main>
+
+  <!-- Firebase Modular Scripts via CDN -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js';
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js';
+    import { initializeFirestore, collection, doc, getDoc, getDocs, updateDoc, deleteDoc, addDoc, query, orderBy, limit, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
+    import { firebaseConfig } from './firebase-config.js';
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    auth.languageCode = 'es';
+    const db = initializeFirestore(app, {});
+
+    const $ = s => document.querySelector(s);
+    const $$ = s => [...document.querySelectorAll(s)];
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const pad = n => String(n).padStart(2, '0');
+    const dateISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const datePlus = n => { const d = new Date(); d.setDate(d.getDate() + n); return dateISO(d); };
+
+    function toast(msg) {
+      const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 3500);
+    }
+    function showModal(html) {
+      $('#modalContent').innerHTML = html;
+      $('#modalBackdrop').classList.add('show');
+    }
+    function hideModal() {
+      $('#modalBackdrop').classList.remove('show');
+      $('#modalContent').innerHTML = '';
+    }
+    $('#modalBackdrop').onclick = e => { if (e.target === $('#modalBackdrop')) hideModal(); };
+
+    // Theme toggle
+    let isDark = localStorage.getItem('em_admin_theme') === 'dark' || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const applyTheme = () => {
+      document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+      $('#themeToggle').textContent = isDark ? '☀️' : '🌙';
+    };
+    $('#themeToggle').onclick = () => {
+      isDark = !isDark;
+      localStorage.setItem('em_admin_theme', isDark ? 'dark' : 'light');
+      applyTheme();
+    };
+    applyTheme();
+
+    let currentUser = null;
+    let activeTab = 'resumen';
+
+    const allDocs = async (c, ...q) => (await getDocs(q.length ? query(collection(db, c), ...q) : collection(db, c))).docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Auth listeners
+    onAuthStateChanged(auth, async u => {
+      currentUser = u;
+      if (!u) {
+        $('#authContainer').classList.remove('hidden');
+        $('#dashboardContainer').classList.add('hidden');
+        $('#deniedContainer').classList.add('hidden');
+        $('#logoutBtn').classList.add('hidden');
+        $('#changePasswordBtn').classList.add('hidden');
+        $('#adminUserEmail').textContent = 'Panel de Control';
+        return;
+      }
+
+      // Check role
+      try {
+        const userDoc = await getDoc(doc(db, 'users', u.uid));
+        const role = userDoc.exists() ? userDoc.data().role : 'user';
+        if (role !== 'admin') {
+          $('#authContainer').classList.add('hidden');
+          $('#dashboardContainer').classList.add('hidden');
+          $('#deniedContainer').classList.remove('hidden');
+          $('#logoutBtn').classList.remove('hidden');
+          $('#changePasswordBtn').classList.remove('hidden');
+          return;
+        }
+
+        // Verified Admin
+        $('#adminUserEmail').textContent = `${u.email} (Admin)`;
+        $('#authContainer').classList.add('hidden');
+        $('#deniedContainer').classList.add('hidden');
+        $('#dashboardContainer').classList.remove('hidden');
+        $('#logoutBtn').classList.remove('hidden');
+        $('#changePasswordBtn').classList.remove('hidden');
+        loadTab(activeTab);
+      } catch (err) {
+        console.error(err);
+        toast('Error al verificar permisos.');
+      }
+    });
+
+    $('#loginForm').onsubmit = async e => {
+      e.preventDefault();
+      const btn = $('#submitLoginBtn');
+      btn.disabled = true; btn.textContent = 'Verificando...';
+      try {
+        await signInWithEmailAndPassword(auth, $('#adminEmail').value.trim(), $('#adminPass').value);
+      } catch (err) {
+        toast('Error de autenticación: ' + (err.code || err.message));
+        btn.disabled = false; btn.textContent = 'Entrar como Administrador';
+      }
+    };
+
+    $('#forgotPasswordBtn').onclick = async () => {
+      const email = $('#adminEmail').value.trim().toLowerCase();
+      if (!email) { toast('Escribe el correo de administración.'); return; }
+      try {
+        await sendPasswordResetEmail(auth, email);
+        toast('Te enviamos un correo seguro para restablecer la contraseña.');
+      } catch (err) { toast('No se pudo enviar el correo: ' + (err.code || err.message)); }
+    };
+
+    function openChangePassword() {
+      if (!currentUser) return;
+      const usesPassword = currentUser.providerData.some(p => p.providerId === 'password');
+      if (!usesPassword) { toast('Esta cuenta usa Google. Gestiona su contraseña desde tu Cuenta de Google.'); return; }
+      showModal(`<h2 class="text-lg font-extrabold mb-2">Cambiar contraseña</h2>
+        <p class="muted text-xs mb-4">Usa una contraseña única de al menos 8 caracteres.</p>
+        <form id="changePasswordForm" class="space-y-3">
+          <div><label class="text-xs font-bold block mb-1" for="currentPassword">Contraseña actual</label><input id="currentPassword" class="input" type="password" autocomplete="current-password" required></div>
+          <div><label class="text-xs font-bold block mb-1" for="newPassword">Nueva contraseña</label><input id="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required></div>
+          <div><label class="text-xs font-bold block mb-1" for="confirmPassword">Repite la nueva contraseña</label><input id="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required></div>
+          <button class="main-btn w-full" type="submit">Guardar nueva contraseña</button>
+        </form>`);
+      $('#changePasswordForm').onsubmit = async e => {
+        e.preventDefault();
+        const current = $('#currentPassword').value, next = $('#newPassword').value;
+        if (next !== $('#confirmPassword').value) { toast('Las contraseñas no coinciden.'); return; }
+        try {
+          await reauthenticateWithCredential(currentUser, EmailAuthProvider.credential(currentUser.email, current));
+          await updatePassword(currentUser, next);
+          hideModal(); toast('Contraseña actualizada correctamente.');
+        } catch (err) { toast('No se pudo cambiar: ' + (err.code || err.message)); }
+      };
+    }
+
+    $('#googleLoginBtn').onclick = async () => {
+      try {
+        await signInWithPopup(auth, new GoogleAuthProvider());
+      } catch (err) {
+        toast('Error con Google: ' + err.message);
+      }
+    };
+
+    const doLogout = async () => { await signOut(auth); toast('Sesión cerrada.'); };
+    $('#logoutBtn').onclick = doLogout;
+    $('#changePasswordBtn').onclick = openChangePassword;
+    $('#deniedLogoutBtn').onclick = doLogout;
+    $('#refreshBtn').onclick = () => { loadTab(activeTab); toast('Datos actualizados.'); };
+
+    // Tabs
+    $$('[data-tab]').forEach(btn => {
+      btn.onclick = () => {
+        $$('[data-tab]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTab = btn.dataset.tab;
+        loadTab(activeTab);
+      };
+    });
+
+    async function loadTab(tab) {
+      const container = $('#tabContent');
+      container.innerHTML = '<p class="p-6 text-center muted text-sm">Cargando datos en tiempo real...</p>';
+      try {
+        if (tab === 'resumen') await renderResumen(container);
+        else if (tab === 'negocios') await renderNegocios(container);
+        else if (tab === 'pagos') await renderPagos(container);
+        else if (tab === 'eventos') await renderEventos(container);
+        else if (tab === 'resenas') await renderResenas(container);
+        else if (tab === 'usuarios') await renderUsuarios(container);
+        else if (tab === 'categorias') await renderCategorias(container);
+        else if (tab === 'datos') await renderDatos(container);
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div class="card text-red-500 text-sm">Error al cargar datos: ${esc(e.message)}</div>`;
+      }
+    }
+
+    // 1. Resumen
+    async function renderResumen(root) {
+      const [biz, evs, revs, users, stats, payments] = await Promise.all([
+        allDocs('businesses'),
+        allDocs('events'),
+        allDocs('reviews', limit(300)),
+        allDocs('users', limit(500)),
+        allDocs('stats'),
+        allDocs('payments', limit(300)).catch(() => [])
+      ]);
+
+      const pendingBiz = biz.filter(b => b.status === 'pending').length;
+      const pendingPay = payments.filter(p => p.status === 'pending_verification').length;
+      const pendingEvs = evs.filter(e => e.status === 'pending').length;
+      const approvedBiz = biz.filter(b => b.status === 'approved').length;
+
+      // Update badges
+      const bPay = $('#badgePay'), bBiz = $('#badgeBiz'), bEv = $('#badgeEv');
+      if (bPay) { bPay.textContent = pendingPay; bPay.classList.toggle('hidden', pendingPay === 0); }
+      if (bBiz) { bBiz.textContent = pendingBiz; bBiz.classList.toggle('hidden', pendingBiz === 0); }
+      if (bEv) { bEv.textContent = pendingEvs; bEv.classList.toggle('hidden', pendingEvs === 0); }
+
+      root.innerHTML = `
+        <div class="kpi">
+          <div class="kpi-card" style="border-color:#10b981"><strong class="text-emerald-500">${pendingPay}</strong><span class="muted text-xs font-bold">Pagos por verificar</span></div>
+          <div class="kpi-card" style="border-color:#f59e0b"><strong class="text-amber-500">${pendingBiz}</strong><span class="muted text-xs font-bold">Negocios por aprobar</span></div>
+          <div class="kpi-card" style="border-color:#6366f1"><strong class="text-indigo-500">${pendingEvs}</strong><span class="muted text-xs font-bold">Eventos por aprobar</span></div>
+          <div class="kpi-card"><strong>${approvedBiz}</strong><span class="muted text-xs font-bold">Negocios activos</span></div>
+          <div class="kpi-card"><strong>${users.length}</strong><span class="muted text-xs font-bold">Usuarios totales</span></div>
+          <div class="kpi-card"><strong>${revs.length}</strong><span class="muted text-xs font-bold">Reseñas</span></div>
+        </div>
+        <div class="card mt-4">
+          <h3 class="font-extrabold text-sm mb-3">Accesos Directos de Moderación</h3>
+          <div class="flex flex-wrap gap-2">
+            <button class="main-btn text-xs py-2 px-3" onclick="document.querySelector('[data-tab=pagos]').click()">💳 Moderar Pagos (${pendingPay})</button>
+            <button class="soft-btn text-xs py-2 px-3" onclick="document.querySelector('[data-tab=negocios]').click()">🏪 Moderar Negocios (${pendingBiz})</button>
+            <button class="soft-btn text-xs py-2 px-3" onclick="document.querySelector('[data-tab=eventos]').click()">📅 Moderar Eventos (${pendingEvs})</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Negocios
+    async function renderNegocios(root) {
+      const biz = (await allDocs('businesses')).sort((a,b) => (a.status === 'pending' ? -1 : 1));
+      root.innerHTML = `
+        <div class="space-y-3">
+          ${biz.map(b => `
+            <div class="card">
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <strong class="text-base">${esc(b.name)}</strong>
+                  <span class="muted text-xs"> · ${esc(b.category)} · 📍 ${esc(b.department || '')} ${esc(b.district || '')}</span>
+                </div>
+                <div class="flex gap-1">
+                  <span class="pill ${b.status === 'approved' ? 'ok' : b.status === 'pending' ? 'warn' : 'bad'}">${esc(b.status)}</span>
+                  <span class="pill font-bold">Plan ${esc(b.plan)}</span>
+                </div>
+              </div>
+              <p class="muted text-xs mt-2">${esc(b.address)} · Dueño: ${esc(b.ownerEmail || b.ownerUid)}</p>
+              ${b.status === 'rejected' && b.rejectReason ? `<p class="text-xs text-red-500 mt-1 font-semibold">Motivo: ${esc(b.rejectReason)}</p>` : ''}
+              <div class="flex flex-wrap gap-2 mt-3 pt-2 border-t border-line">
+                ${b.status !== 'approved' ? `<button class="soft-btn success text-xs py-1.5 px-3" data-appbiz="${b.id}">✓ Aprobar</button>` : ''}
+                ${b.status !== 'rejected' ? `<button class="soft-btn danger text-xs py-1.5 px-3" data-rejbiz="${b.id}">✕ Rechazar</button>` : ''}
+                <button class="soft-btn text-xs py-1.5 px-3" data-pausebiz="${b.id}">${b.paused ? 'Reactivar' : 'Pausar'}</button>
+                <button class="soft-btn danger text-xs py-1.5 px-3" data-delbiz="${b.id}">Eliminar</button>
+              </div>
+            </div>
+          `).join('') || '<div class="card muted text-center">No hay negocios registrados.</div>'}
+        </div>
+      `;
+
+      $$('[data-appbiz]', root).forEach(btn => btn.onclick = async () => {
+        try {
+          await updateDoc(doc(db, 'businesses', btn.dataset.appbiz), { status: 'approved', rejectReason: '', approvedAt: serverTimestamp() });
+          toast('Negocio aprobado.'); loadTab('negocios');
+        } catch (e) { toast(e.message); }
+      });
+      $$('[data-rejbiz]', root).forEach(btn => btn.onclick = async () => {
+        const reason = prompt('Motivo de rechazo:')?.trim() || 'Información no válida';
+        try {
+          await updateDoc(doc(db, 'businesses', btn.dataset.rejbiz), { status: 'rejected', rejectReason: reason });
+          toast('Negocio rechazado.'); loadTab('negocios');
+        } catch (e) { toast(e.message); }
+      });
+      $$('[data-pausebiz]', root).forEach(btn => btn.onclick = async () => {
+        const b = biz.find(x => x.id === btn.dataset.pausebiz);
+        try {
+          await updateDoc(doc(db, 'businesses', b.id), { paused: !b.paused });
+          toast('Estado de pausa modificado.'); loadTab('negocios');
+        } catch (e) { toast(e.message); }
+      });
+      $$('[data-delbiz]', root).forEach(btn => btn.onclick = async () => {
+        if (!confirm('¿Eliminar este negocio definitivamente?')) return;
+        try {
+          await deleteDoc(doc(db, 'businesses', btn.dataset.delbiz));
+          toast('Negocio eliminado.'); loadTab('negocios');
+        } catch (e) { toast(e.message); }
+      });
+    }
+
+    // 3. Pagos (Yape, Plin, PayPal, Stripe)
+    async function renderPagos(root) {
+      const [payments, biz] = await Promise.all([
+        allDocs('payments', orderBy('createdAt', 'desc'), limit(100)).catch(() => []),
+        allDocs('businesses')
+      ]);
+
+      const pending = payments.filter(p => p.status === 'pending_verification').length;
+      root.innerHTML = `
+        <div class="kpi mb-3">
+          <div class="kpi-card" style="border-color:#f59e0b"><strong class="text-amber-500">${pending}</strong><span class="muted text-xs font-bold">Pagos pendientes</span></div>
+          <div class="kpi-card" style="border-color:#10b981"><strong class="text-emerald-500">${payments.filter(p => p.status === 'approved').length}</strong><span class="muted text-xs font-bold">Pagos aprobados</span></div>
+        </div>
+        <div class="space-y-3">
+          ${payments.map(p => {
+            const b = biz.find(x => x.id === p.businessId);
+            const isPending = p.status === 'pending_verification';
+            return `
+              <div class="card">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <strong class="text-base">${esc(p.businessName || b?.name || 'Negocio')}</strong>
+                    <span class="muted text-xs"> · Plan <strong>${esc(p.plan)}</strong></span>
+                  </div>
+                  <span class="pill ${isPending ? 'warn' : p.status === 'approved' ? 'ok' : 'bad'}">${isPending ? 'Por verificar' : esc(p.status)}</span>
+                </div>
+                <p class="muted text-xs mt-2">
+                  Monto: <strong class="text-sm">${p.currency === 'USD' ? '$' : 'S/.'} ${p.amount}</strong> · Método: <strong class="text-indigo-600">${esc(p.method?.toUpperCase() || 'PAGO')}</strong> · Op: <code>${esc(p.operationCode || '—')}</code>
+                </p>
+                <p class="muted text-xs mt-1">Usuario: ${esc(p.ownerEmail || p.ownerUid)}</p>
+                ${p.voucher ? `
+                  <div class="mt-3">
+                    <span class="text-xs font-bold muted">Comprobante de Pago (Toca para ampliar):</span>
+                    <div class="mt-1">
+                      <img src="${esc(p.voucher)}" alt="Voucher" class="rounded-xl border border-line cursor-pointer hover:opacity-90 max-h-44" data-zoom="${esc(p.voucher)}">
+                    </div>
+                  </div>
+                ` : '<p class="muted text-xs mt-2">Sin comprobante adjunto.</p>'}
+                ${isPending ? `
+                  <div class="flex flex-wrap gap-2 mt-4 pt-2 border-t border-line">
+                    <button class="soft-btn success text-xs py-2 px-3" data-payok="${p.id}" data-paybiz="${p.businessId}" data-payplan="${p.plan}">✓ Aprobar Pago y Activar (+30 días)</button>
+                    <button class="soft-btn danger text-xs py-2 px-3" data-payrej="${p.id}">✕ Rechazar Pago</button>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('') || '<div class="card muted text-center">No hay registros de pagos aún.</div>'}
+        </div>
+      `;
+
+      $$('[data-zoom]', root).forEach(img => {
+        img.onclick = () => {
+          showModal(`
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-extrabold text-base">Comprobante de Pago</h3>
+              <button class="soft-btn px-2 py-1" onclick="document.querySelector('#modalBackdrop').classList.remove('show')">✕</button>
+            </div>
+            <div class="text-center">
+              <img src="${esc(img.dataset.zoom)}" alt="Voucher grande" style="max-width:100%;max-height:75vh;border-radius:12px;margin:auto">
+            </div>
+          `);
+        };
+      });
+
+      $$('[data-payok]', root).forEach(btn => btn.onclick = async () => {
+        const pid = btn.dataset.payok, bid = btn.dataset.paybiz, plan = btn.dataset.payplan;
+        btn.disabled = true; btn.textContent = 'Aprobando...';
+        try {
+          const batch = writeBatch(db);
+          batch.update(doc(db, 'payments', pid), { status: 'approved', approvedAt: serverTimestamp() });
+          batch.update(doc(db, 'businesses', bid), { plan, subscriptionActive: true, subscriptionEnd: datePlus(30), updatedAt: serverTimestamp() });
+          await batch.commit();
+          toast(`¡Pago aprobado! Plan ${plan} activado por 30 días.`);
+          loadTab('pagos');
+        } catch (e) { toast(e.message); btn.disabled = false; }
+      });
+
+      $$('[data-payrej]', root).forEach(btn => btn.onclick = async () => {
+        const reason = prompt('Motivo de rechazo:')?.trim() || 'Comprobante no válido';
+        try {
+          await updateDoc(doc(db, 'payments', btn.dataset.payrej), { status: 'rejected', rejectReason: reason });
+          toast('Pago rechazado.'); loadTab('pagos');
+        } catch (e) { toast(e.message); }
+      });
+    }
+
+    // 4. Eventos
+    async function renderEventos(root) {
+      const evs = (await allDocs('events')).sort((a,b) => (a.status === 'pending' ? -1 : 1));
+      root.innerHTML = `
+        <div class="space-y-3">
+          ${evs.map(e => `
+            <div class="card">
+              <div class="flex justify-between items-center flex-wrap gap-2">
+                <strong class="text-base">${esc(e.title)}</strong>
+                <span class="pill ${e.status === 'approved' ? 'ok' : e.status === 'pending' ? 'warn' : 'bad'}">${esc(e.status)}</span>
+              </div>
+              <p class="muted text-xs mt-1">📅 ${esc(e.date)} ${esc(e.time || '')}</p>
+              <p class="text-xs mt-2">${esc(e.description || '')}</p>
+              <div class="flex gap-2 mt-3 pt-2 border-t border-line">
+                ${e.status !== 'approved' ? `<button class="soft-btn success text-xs py-1.5 px-3" data-appev="${e.id}">✓ Aprobar</button>` : ''}
+                ${e.status !== 'rejected' ? `<button class="soft-btn danger text-xs py-1.5 px-3" data-rejev="${e.id}">✕ Rechazar</button>` : ''}
+                <button class="soft-btn danger text-xs py-1.5 px-3" data-delev="${e.id}">Eliminar</button>
+              </div>
+            </div>
+          `).join('') || '<div class="card muted text-center">No hay eventos.</div>'}
+        </div>
+      `;
+      $$('[data-appev]', root).forEach(b => b.onclick = async () => {
+        try { await updateDoc(doc(db, 'events', b.dataset.appev), { status: 'approved', approvedAt: serverTimestamp() }); toast('Evento aprobado.'); loadTab('eventos'); } catch(e){toast(e.message);}
+      });
+      $$('[data-rejev]', root).forEach(b => b.onclick = async () => {
+        try { await updateDoc(doc(db, 'events', b.dataset.rejev), { status: 'rejected' }); toast('Evento rechazado.'); loadTab('eventos'); } catch(e){toast(e.message);}
+      });
+      $$('[data-delev]', root).forEach(b => b.onclick = async () => {
+        if (!confirm('¿Eliminar evento?')) return;
+        try { await deleteDoc(doc(db, 'events', b.dataset.delev)); toast('Evento eliminado.'); loadTab('eventos'); } catch(e){toast(e.message);}
+      });
+    }
+
+    // 5. Reseñas
+    async function renderResenas(root) {
+      const revs = await allDocs('reviews', limit(200));
+      root.innerHTML = `
+        <div class="space-y-3">
+          ${revs.map(r => `
+            <div class="card">
+              <div class="flex justify-between items-center">
+                <span class="text-amber-500 font-bold">${'★'.repeat(r.stars || 5)}</span>
+                <span class="pill ${r.status === 'visible' ? 'info' : 'gray'}">${esc(r.status || 'visible')}</span>
+              </div>
+              <p class="text-sm mt-2">${esc(r.text)}</p>
+              <p class="muted text-xs mt-1">Por: ${esc(r.displayName || r.uid)}</p>
+              <div class="flex gap-2 mt-3 pt-2 border-t border-line">
+                <button class="soft-btn text-xs py-1.5 px-3" data-togrev="${r.id}" data-st="${r.status}">${r.status === 'visible' ? 'Ocultar' : 'Mostrar'}</button>
+                <button class="soft-btn danger text-xs py-1.5 px-3" data-delrev="${r.id}">Eliminar</button>
+              </div>
+            </div>
+          `).join('') || '<div class="card muted text-center">No hay reseñas registradas.</div>'}
+        </div>
+      `;
+      $$('[data-togrev]', root).forEach(b => b.onclick = async () => {
+        try { await updateDoc(doc(db, 'reviews', b.dataset.togrev), { status: b.dataset.st === 'visible' ? 'hidden' : 'visible' }); loadTab('resenas'); } catch(e){toast(e.message);}
+      });
+      $$('[data-delrev]', root).forEach(b => b.onclick = async () => {
+        if (!confirm('¿Eliminar reseña?')) return;
+        try { await deleteDoc(doc(db, 'reviews', b.dataset.delrev)); loadTab('resenas'); } catch(e){toast(e.message);}
+      });
+    }
+
+    // 6. Usuarios
+    async function renderUsuarios(root) {
+      const users = await allDocs('users', limit(500));
+      root.innerHTML = `
+        <div class="card overflow-x-auto">
+          <table class="simple">
+            <thead>
+              <tr><th>Usuario</th><th>Email</th><th>Rol Actual</th><th>Modificar</th></tr>
+            </thead>
+            <tbody>
+              ${users.map(u => `
+                <tr>
+                  <td><strong>${esc(u.displayName || '—')}</strong></td>
+                  <td class="muted text-xs">${esc(u.email || u.id)}</td>
+                  <td><span class="pill info">${esc(u.role || 'user')}</span></td>
+                  <td>
+                    <select class="input text-xs py-1" data-chrole="${u.id}">
+                      <option value="user" ${u.role === 'user' ? 'selected' : ''}>Usuario</option>
+                      <option value="business" ${u.role === 'business' ? 'selected' : ''}>Negocio</option>
+                      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option>
+                    </select>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      $$('[data-chrole]', root).forEach(sel => sel.onchange = async () => {
+        try {
+          await updateDoc(doc(db, 'users', sel.dataset.chrole), { role: sel.value });
+          toast('Rol actualizado.');
+        } catch(e) { toast(e.message); }
+      });
+    }
+
+    // 7. Categorías
+    async function renderCategorias(root) {
+      const cats = await allDocs('categories');
+      root.innerHTML = `
+        <div class="card mb-3">
+          <h3 class="font-bold text-xs mb-2">Crear Nueva Categoría</h3>
+          <form id="newCatForm" class="flex gap-2">
+            <input id="newCatInput" required class="input" placeholder="Nombre (ej. Gimnasio)">
+            <button class="main-btn whitespace-nowrap text-xs py-2 px-4">＋ Agregar</button>
+          </form>
+        </div>
+        <div class="space-y-2">
+          ${cats.map(c => `
+            <div class="card flex justify-between items-center py-2.5">
+              <span class="font-bold text-sm">${esc(c.name)}</span>
+              <button class="soft-btn danger text-xs py-1 px-3" data-delcat="${c.id}">Eliminar</button>
+            </div>
+          `).join('') || '<div class="card muted text-center">Sin categorías personalizadas.</div>'}
+        </div>
+      `;
+      $('#newCatForm').onsubmit = async e => {
+        e.preventDefault();
+        const name = $('#newCatInput').value.trim();
+        try { await addDoc(collection(db, 'categories'), { name, order: cats.length }); toast('Categoría agregada.'); loadTab('categorias'); } catch(e){toast(e.message);}
+      };
+      $$('[data-delcat]', root).forEach(b => b.onclick = async () => {
+        if (!confirm('¿Eliminar categoría?')) return;
+        try { await deleteDoc(doc(db, 'categories', b.dataset.delcat)); loadTab('categorias'); } catch(e){toast(e.message);}
+      });
+    }
+
+    // 8. Datos / Sistema
+    async function renderDatos(root) {
+      root.innerHTML = `
+        <div class="card">
+          <h3 class="font-extrabold text-sm mb-2">Estado del Servidor y Base de Datos</h3>
+          <p class="text-xs muted mb-3">Conectado a Firebase: <code class="text-indigo-600 font-bold">${firebaseConfig.projectId}</code></p>
+          <ul class="text-xs space-y-1.5 list-disc pl-5 muted mb-4">
+            <li>Firestore: Conectado (Spark Plan)</li>
+            <li>Autenticación: Activo (Google + Email)</li>
+            <li>Almacenamiento: Comprimido en base de datos Firestore</li>
+            <li>Pagos: Yape, Plin, PayPal, Stripe</li>
+          </ul>
+          <p class="text-[11px] muted">EventMaps Admin v1.0 Nativo Android</p>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>
