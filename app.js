@@ -263,17 +263,17 @@ function redraw() {
   const shown = visibleBusinesses();
   $('#resultCount').textContent = state.businesses.size === 0 ? 'Aún no hay negocios publicados.' : shown.length === 1 ? '1 negocio' : `${shown.length} negocios`;
   shown.forEach(b => {
-    const label = b.name.length > 12 ? b.name.slice(0, 11) + '…' : b.name;
+    const label = b.name.length > 18 ? b.name.slice(0, 17) + '…' : b.name;
     const evCount = activeEvents(b.id).length;
-    const markerVisual = b.mapImage ? `<img class="map-logo" src="${esc(b.mapImage)}" alt="">` : `<span class="emoji" aria-hidden="true">${iconFor(b.category)}</span>`;
-    const html = `<div class="bubble ${esc((b.plan || 'free').toLowerCase())}">${markerVisual}<span class="marker-name">${esc(label)}</span>${b.plan !== 'Free' ? `<span class="marker-plan">${esc(planLabel(b.plan))}</span>` : ''}${whatsappURL(b) ? `<a class="marker-wa" href="${esc(whatsappURL(b))}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp de ${esc(b.name)}">WhatsApp ↗</a>` : ''}${state.favorites.has(b.id) ? '<span class="fav" aria-hidden="true">♥</span>' : ''}</div>`;
+    const markerVisual = b.mapImage ? `<img class="pin-photo" src="${esc(b.mapImage)}" alt="" loading="lazy">` : `<span class="pin-emoji" aria-hidden="true">${iconFor(b.category)}</span>`;
+    const tier = esc((b.plan || 'free').toLowerCase());
+    const html = `<div class="em-pin ${tier}" title="${esc(b.name)}"><div class="bubble pin-bubble ${tier}">${markerVisual}${state.favorites.has(b.id) ? '<span class="fav" aria-hidden="true">♥</span>' : ''}</div><span class="pin-name">${esc(label)}</span></div>`;
     const m = L.marker([b.lat, b.lng], {
-      icon: L.divIcon({ className: 'bubble-wrap', html, iconSize: [112, whatsappURL(b) ? 112 : 78], iconAnchor: [56, whatsappURL(b) ? 108 : 74] }),
+      icon: L.divIcon({ className: 'bubble-wrap', html, iconSize: [130, 96], iconAnchor: [65, 70] }),
       title: `${b.name}, ${b.category}${evCount ? `, ${evCount} eventos` : ''}`, alt: b.name, keyboard: true, riseOnHover: true
     }).addTo(markerLayer);
-    m.on('click', e => {if(!e.originalEvent?.target?.closest?.('.marker-wa'))openBusiness(b.id);});
-    const wa=m.getElement()?.querySelector('.marker-wa');if(wa){L.DomEvent.disableClickPropagation(wa);L.DomEvent.disableScrollPropagation(wa);wa.addEventListener('keydown',event=>event.stopPropagation());}
-    m.on('keypress', e => { if(e.originalEvent.target?.closest?.('.marker-wa'))return; if (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ') openBusiness(b.id); });
+    m.on('click', () => openBusiness(b.id));
+    m.on('keypress', e => { if (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ') openBusiness(b.id); });
   });
 }
 

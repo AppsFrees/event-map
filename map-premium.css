@@ -3,7 +3,7 @@
 .bubble.standard{animation:em-float 3.7s ease-in-out infinite,em-standard-glow 5s ease-in-out infinite}
 .bubble.pro{animation:em-float 3.2s ease-in-out infinite,em-gold-glow 4s ease-in-out infinite}
 .bubble.pro:before{content:'';position:absolute;inset:-7px;border:2px solid #fbbf24;border-radius:25px;pointer-events:none;animation:em-gold-ring 3.8s ease-out infinite}
-.marker-plan{display:block;font-size:9px;letter-spacing:.07em;margin-top:4px;color:#fff}.marker-name{display:block}.marker-wa{display:flex;align-items:center;justify-content:center;min-height:32px;margin-top:7px;padding:5px 7px;border:1px solid #fff8;border-radius:10px;background:#126637;color:white!important;text-decoration:none;font-size:10px;line-height:1.1;position:relative;z-index:1}.marker-wa:hover,.marker-wa:focus-visible{background:#064e2a}.marker-wa:focus-visible{outline:3px solid white;outline-offset:2px}.bubble-wrap{width:112px!important}.bubble{max-width:112px}
+
 @keyframes em-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes em-standard-glow{0%,100%{box-shadow:0 6px 16px #0369a144}50%{box-shadow:0 0 0 4px #22d3ee44,0 8px 22px #0891b266}}
 @keyframes em-gold-glow{0%,100%{box-shadow:0 0 0 3px #fbbf2433,0 8px 20px #6d28d955}50%{box-shadow:0 0 0 5px #fbbf2455,0 10px 26px #6d28d977}}
@@ -12,3 +12,25 @@
 html.reduce-motion .bubble,html.reduce-motion .bubble:before{animation:none!important}
 @media(prefers-reduced-motion:reduce){.bubble,.bubble:before{animation:none!important}}
 #paymentSettingsForm input[type=checkbox]{width:auto;min-height:0;margin-right:8px}
+
+/* Burbuja con foto a marco completo y nombre por fuera */
+.bubble-wrap{width:130px!important;overflow:visible}
+.em-pin{display:flex;flex-direction:column;align-items:center;width:130px;animation:em-float 4.6s ease-in-out infinite;transform-origin:50% 100%}
+.em-pin.standard{animation-duration:3.7s}.em-pin.pro{animation-duration:3.2s}
+.em-pin .pin-bubble{position:relative;width:62px;height:62px;min-width:0;max-width:none;padding:0;border-radius:50%;overflow:visible;display:grid;place-items:center;border:3px solid #fff;background:#753bd1;box-shadow:0 6px 16px #24205b55;animation:none}
+.em-pin .pin-bubble:after{bottom:-9px;border-width:9px 8px 0;left:calc(50% - 8px);border-top-color:#fff}
+.em-pin .pin-photo{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+.em-pin .pin-emoji{font-size:28px;line-height:1}
+.em-pin .pin-bubble.free{border-color:#fff;background:linear-gradient(145deg,#64748b,#94a3b8)}
+.em-pin .pin-bubble.standard{border-color:#22d3ee;background:linear-gradient(145deg,#0369a1,#0891b2);animation:em-standard-glow 5s ease-in-out infinite}
+.em-pin .pin-bubble.standard:after{border-top-color:#22d3ee}
+.em-pin .pin-bubble.pro{border-color:#fbbf24;background:linear-gradient(145deg,#6d28d9,#9333ea);animation:em-gold-glow 4s ease-in-out infinite}
+.em-pin .pin-bubble.pro:after{border-top-color:#fbbf24}
+.em-pin .pin-bubble.pro:before{border-radius:50%;inset:-8px}
+.em-pin .pin-bubble .fav{top:-6px;right:-6px}
+.pin-name{margin-top:12px;max-width:130px;padding:3px 9px;border-radius:999px;background:#fffffff2;color:#1f1a2e;font-size:11px;font-weight:800;line-height:1.25;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px #24205b33;border:1px solid #0000000f}
+html[data-theme=dark] .pin-name{background:#1f1a2df2;color:#f5f2fc;border-color:#ffffff22}
+.leaflet-marker-icon:focus-visible .pin-bubble{outline:3px solid #0e9aab;outline-offset:3px}
+.em-map-paused .em-pin{animation-play-state:paused!important}
+html.reduce-motion .em-pin{animation:none!important}
+@media(prefers-reduced-motion:reduce){.em-pin{animation:none!important}}
