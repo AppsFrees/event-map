@@ -306,19 +306,37 @@ function redraw() {
 // ---------------------------------------------------------------------------
 // Filtros
 // ---------------------------------------------------------------------------
+function closeCatMenu() { const m = document.getElementById('catMenu'); if (m) m.remove(); const c = document.getElementById('catChip'); if (c) c.setAttribute('aria-expanded', 'false'); }
+function toggleCatMenu(chip) {
+  if (document.getElementById('catMenu')) { closeCatMenu(); return; }
+  const r = chip.getBoundingClientRect();
+  const menu = document.createElement('div'); menu.id = 'catMenu'; menu.className = 'cat-menu glass'; menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', 'Categorías');
+  menu.style.top = `${r.bottom + 6}px`; menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 228))}px`;
+  const opts = ['Todas las categorías', ...state.categories];
+  menu.innerHTML = opts.map((c, i) => { const val = i === 0 ? 'Todos' : c; const on = i === 0 ? !state.categories.includes(state.filter) : state.filter === c; return `<button role="option" aria-selected="${on}" data-cat="${esc(val)}">${esc(c)}</button>`; }).join('');
+  document.body.append(menu); chip.setAttribute('aria-expanded', 'true');
+  menu.addEventListener('click', ev => { const b = ev.target.closest('[data-cat]'); if (!b) return; state.filter = b.dataset.cat; closeCatMenu(); renderChips(); redraw(); track('filter', { filter: state.filter }); });
+  menu.querySelector('[aria-selected=true]')?.focus();
+  setTimeout(() => { const off = ev => { if (!menu.contains(ev.target) && ev.target.closest('#catChip') !== chip) { closeCatMenu(); document.removeEventListener('pointerdown', off, true); } }; document.addEventListener('pointerdown', off, true); }, 0);
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('catMenu')) { closeCatMenu(); document.getElementById('catChip')?.focus(); } });
+$('#chips').addEventListener('scroll', closeCatMenu, { passive: true });
 function renderChips() {
-  const base = ['Todos', 'Cerca', 'Populares', ...state.categories, 'Promociones', 'Hoy', 'Fin de semana', 'Favoritos', 'Mi agenda'];
-  if (!base.includes(state.filter)) state.filter = 'Todos';
-  const labels = { Cerca: `📍 Cerca (${state.nearRadiusKm} km)`, Favoritos: '♥ Favoritos', 'Mi agenda': '✓ Mi agenda' };
+  const base = ['Todos', 'Populares', 'Promociones', 'Favoritos'];
+  const isCat = state.categories.includes(state.filter);
+  if (!base.includes(state.filter) && !isCat) state.filter = 'Todos';
+  const labels = { Favoritos: '♥ Favoritos' };
   const g = state.geoFilter, geoOn = !(g.country === 'Todos' && g.department === 'Todos' && g.district === 'Todos');
   const geoChip = `<button class="chip" id="geoChip" aria-pressed="${geoOn}" aria-haspopup="dialog">📍 Ubicación</button>`;
-  $('#chips').innerHTML = base.map((f, i) => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${f === state.filter}">${esc(labels[f] || f)}</button>${i === 0 ? geoChip : ''}`).join('');
+  const catChip = `<button class="chip" id="catChip" aria-pressed="${isCat}" aria-haspopup="listbox" aria-expanded="false">🏷️ ${esc(isCat ? state.filter : 'Categorías')} ▾</button>`;
+  $('#chips').innerHTML = base.map((f, i) => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${f === state.filter}">${esc(labels[f] || f)}</button>${i === 0 ? geoChip + catChip : ''}`).join('');
 }
 $('#chips').addEventListener('click', e => {
   if (e.target.closest('#geoChip')) { openGeoFilterModal(); return; }
+  if (e.target.closest('#catChip')) { toggleCatMenu(e.target.closest('#catChip')); return; }
   const btn = e.target.closest('[data-filter]'); if (!btn) return;
   const f = btn.dataset.filter;
-  if ((f === 'Favoritos' || f === 'Mi agenda') && !state.user) { openAuth('Inicia sesión para ver tus favoritos y tu agenda en todos tus dispositivos.'); return; }
+  if (f === 'Favoritos' && !state.user) { openAuth('Inicia sesión para ver tus favoritos en todos tus dispositivos.'); return; }
   state.filter = f; renderChips(); redraw(); track('filter', { filter: f });
 });
 
@@ -437,9 +455,9 @@ function goToPlace(p) {
   if (searchMarker) map.removeLayer(searchMarker);
   searchMarker = L.circleMarker([p.lat, p.lng], { radius: 10, color: '#fff', weight: 3, fillColor: '#f59e0b', fillOpacity: 1 }).addTo(map).bindPopup(esc(p.name)).openPopup();
   map.flyTo([p.lat, p.lng], 15);
-  state.query = ''; search.value = ''; state.filter = 'Cerca'; state.userLocation = null; renderChips();
+  state.query = ''; search.value = ''; state.userLocation = null; renderChips();
   setTimeout(redraw, 900); closeSuggest();
-  toast('Mostrando negocios cerca de esa dirección.');
+  toast('Mostrando esa dirección en el mapa.');
 }
 search.addEventListener('input', debounce(e => { state.query = e.target.value.trim(); redraw(); renderSuggest(); if (state.query) track('search', { search_term: state.query }); }, 350));
 search.addEventListener('keydown', e => {
@@ -544,7 +562,7 @@ async function renderSheet(b) {
     return `<article class="event-card"><div class="row-between"><h4 class="font-bold">${esc(e.title)}</h4><span class="pill ${s === 'vigente' ? 'ok' : 'info'}">${statusLabel(s)}</span></div>
       <p class="muted text-xs mt-2">📅 ${esc(fmtDate(e.date))}${e.endDate && e.endDate !== e.date ? ' → ' + esc(fmtDate(e.endDate)) : ''} · ${esc(e.time || 'Hora por confirmar')}</p>
       <div class="text-sm mt-2 leading-relaxed rich">${richText(e.description)}</div>
-      <div class="flex flex-wrap gap-2 mt-3"><button class="soft-btn" data-going="${esc(e.id)}" aria-pressed="${going}">${going ? '✓ Voy' : '＋ Voy a ir'}</button><button class="soft-btn" data-ics="${esc(e.id)}">⤓ Calendario (.ics)</button><a class="soft-btn inline-flex items-center" target="_blank" rel="noopener" href="${esc(googleCalURL(b, e))}">Google Calendar</a></div></article>`;
+      <div class="flex flex-wrap gap-2 mt-3"><button class="soft-btn" data-going="${esc(e.id)}" aria-pressed="${going}">${going ? '✓ Voy' : '＋ Voy a ir'}</button></div></article>`;
   }).join('');
   $('#sheetContent').innerHTML = `<div class="pr-12"><div class="flex items-center gap-2 flex-wrap"><h2 id="sheetTitle" tabindex="-1" class="text-xl font-extrabold">${esc(b.name)}</h2>${b.plan === 'Pro' ? '<span class="pill warn">Destacado Pro</span>' : ''}</div>
     <p class="muted text-xs mt-1">${esc(b.category)} · ${esc(b.address)}</p><p class="muted text-xs mt-1">🕒 ${esc(b.hours || 'Horario no indicado')}</p></div>
@@ -565,7 +583,6 @@ async function renderSheet(b) {
   $('#shareBtn').onclick = () => shareBusiness(b);
   $('#directionsBtn').onclick = () => { bumpStat(b.id, 'routes'); track('get_directions', { item_id: b.id }); window.open(`https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}`, '_blank', 'noopener'); };
   $$('[data-going]', $('#sheetContent')).forEach(btn => btn.onclick = () => toggleGoing(b, btn.dataset.going));
-  $$('[data-ics]', $('#sheetContent')).forEach(btn => btn.onclick = () => downloadICS(b, state.events.find(x => x.id === btn.dataset.ics)));
   const c = $('#couponBtn'); if (c) c.onclick = () => showCoupon(b);
   loadReviews(b);
 }
@@ -842,7 +859,6 @@ function openAccount() {
     <label class="flex items-center gap-2 text-sm my-2"><input type="checkbox" id="darkMap" ${prefs.darkMap ? 'checked' : ''}> Mapa oscuro en modo oscuro</label>
     <label class="flex items-center gap-2 text-sm my-2"><input type="checkbox" id="reduceMotion" ${prefs.reduceMotion ? 'checked' : ''}> Reducir animaciones</label>
     <div class="field"><label for="fontScale">Tamaño del texto</label><select id="fontScale">${[[0.9, 'Pequeño'], [1, 'Normal'], [1.15, 'Grande'], [1.3, 'Muy grande']].map(([v, l]) => `<option value="${v}" ${prefs.fontScale == v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-    <div class="field"><label for="radius">Radio de «Cerca»</label><select id="radius">${[1, 2, 5, 10, 25].map(v => `<option value="${v}" ${state.nearRadiusKm == v ? 'selected' : ''}>${v} km</option>`).join('')}</select></div>
     <h3 class="section-title">Notificaciones</h3>
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="notifToggle" ${state.profile?.notify && window.Notification?.permission === 'granted' ? 'checked' : ''}> Recordatorios de mi agenda y nuevos eventos de mis favoritos</label>
     <a class="link-btn block mt-4" href="./privacy.html" target="_blank" rel="noopener">Política de privacidad</a>
@@ -858,7 +874,6 @@ function openAccount() {
   $('#darkMap').onchange = e => { prefs.darkMap = e.target.checked; savePrefs(); };
   $('#reduceMotion').onchange = e => { prefs.reduceMotion = e.target.checked; savePrefs(); };
   $('#fontScale').onchange = e => { prefs.fontScale = Number(e.target.value); savePrefs(); };
-  $('#radius').onchange = e => { state.nearRadiusKm = Number(e.target.value); renderChips(); redraw(); };
   $('#notifToggle').onchange = async e => { if (e.target.checked) { if (!(await enableNotifications())) e.target.checked = false; } else { await updateDoc(doc(db, 'users', state.user.uid), { notify: false }).catch(() => {}); state.profile.notify = false; await unregisterPush(); toast('Notificaciones desactivadas.'); } };
   $('#deleteAccountRequest').onclick = async () => {
     if (!confirm('Solicitarás el borrado de tu cuenta y de los datos asociados. Esta acción no se puede deshacer.')) return;
