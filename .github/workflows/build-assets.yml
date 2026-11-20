@@ -1,0 +1,35 @@
+name: Compilar CSS y JS
+on:
+  push:
+    branches: [main]
+    paths: ['app.js', 'index.html', 'admin/index.html', 'payment-settings.js', 'privacy.html', 'build/**', '.github/workflows/build-assets.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: build-assets
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar herramientas
+        run: npm install --prefix build --no-audit --no-fund
+      - name: Generar tailwind.css y app.min.js
+        run: |
+          ./build/node_modules/.bin/tailwindcss -c build/tailwind.config.js -i build/tailwind.input.css -o tailwind.css --minify
+          ./build/node_modules/.bin/esbuild app.js --minify --format=esm --target=es2020 --outfile=app.min.js
+          node --input-type=module --check < app.min.js
+      - name: Guardar si cambió
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tailwind.css app.min.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'build: regenerar tailwind.css y app.min.js'
+          git push
