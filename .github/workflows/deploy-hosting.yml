@@ -1,0 +1,40 @@
+name: Publicar en Firebase Hosting
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-hosting
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - name: Falta la clave
+        if: env.HAS_KEY != 'true'
+        run: echo "::warning::Agrega el secreto FIREBASE_SERVICE_ACCOUNT para publicar en https://eventmaps.web.app"
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          node-version: '22'
+      - name: Generar tailwind.css y app.min.js
+        if: env.HAS_KEY == 'true'
+        run: |
+          npm install --prefix build --no-audit --no-fund
+          ./build/node_modules/.bin/tailwindcss -c build/tailwind.config.js -i build/tailwind.input.css -o tailwind.css --minify
+          ./build/node_modules/.bin/esbuild app.js --minify --format=esm --target=es2020 --outfile=app.min.js
+          rm -rf build/node_modules
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        if: env.HAS_KEY == 'true'
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: eventmaps-d8df2
+          channelId: live
