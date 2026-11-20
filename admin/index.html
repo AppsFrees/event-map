@@ -7,10 +7,10 @@
   <meta name="description" content="App de Administración Oficial de EventMaps" />
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
   <title>EventMaps Admin</title>
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="stylesheet" href="../tailwind.css?v=11">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&display=swap" rel="stylesheet">
   <style>
     :root{color-scheme:light;--bg:#f8fafc;--text:#0f172a;--muted:#64748b;--card:#ffffff;--line:#e2e8f0;--shadow:0 10px 25px rgba(0,0,0,0.06);--primary:#4338ca;--primary-text:#4338ca}
     html[data-theme="dark"]{color-scheme:dark;--bg:#0b0f19;--text:#f8fafc;--muted:#94a3b8;--card:#131b2e;--line:#1e293b;--shadow:0 10px 25px rgba(0,0,0,0.4);--primary-text:#818cf8}
@@ -356,9 +356,11 @@
     async function renderNegocios(root) {
       const rank = b => b.status === 'pending' ? -1e6 : (planStatus(b).days ?? 1e6);
       const biz = (await allDocs('businesses')).sort((a,b) => rank(a) - rank(b));
+      const heavyLogos = biz.filter(b => typeof b.mapImage === 'string' && b.mapImage.length > 10000);
       const expiring = biz.filter(b => b.status === 'approved' && b.plan !== 'Free' && planStatus(b).days !== null && planStatus(b).days <= REMIND_DAYS);
       root.innerHTML = `
         <div class="space-y-3">
+          ${heavyLogos.length ? `<div class="card flex flex-wrap items-center justify-between gap-2"><span class="text-sm"><strong>⚡ ${heavyLogos.length} ${heavyLogos.length === 1 ? 'logo pesado' : 'logos pesados'}</strong> en el mapa. Optimizarlos hace que la app cargue más rápido.</span><button class="soft-btn text-xs py-1.5 px-3" id="optLogos">Optimizar logos</button></div>` : ''}
           ${expiring.length ? `<div class="card" style="background:#fef3c7;border-color:#fcd34d"><strong>⏰ ${expiring.length} ${expiring.length === 1 ? 'negocio tiene' : 'negocios tienen'} el plan vencido o por vencer</strong><p class="text-xs mt-1">Usa el botón de WhatsApp de cada uno para recordarles la renovación.</p></div>` : ''}
           ${biz.map(b => `
             <div class="card">
@@ -408,6 +410,15 @@
           toast('Estado de pausa modificado.'); loadTab('negocios');
         } catch (e) { toast(e.message); }
       });
+      const shrink = src => new Promise((ok, fail) => { const img = new Image(); img.onload = () => { const webp = (() => { const c = document.createElement('canvas'); c.width = c.height = 2; return c.toDataURL('image/webp').startsWith('data:image/webp'); })(); let out = src; for (const [side, q] of [[144, .75], [128, .7], [112, .65], [96, .6], [80, .55]]) { const s = Math.min(1, side / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); out = webp ? c.toDataURL('image/webp', q) : c.toDataURL('image/jpeg', q); if (out.length <= 8000) break; } ok(out); }; img.onerror = fail; img.src = src; });
+      const opt = document.getElementById('optLogos');
+      if (opt) opt.onclick = async () => {
+        opt.disabled = true; let done = 0, saved = 0;
+        for (const b of heavyLogos) {
+          try { const small = await shrink(b.mapImage); if (small.length < b.mapImage.length) { await updateDoc(doc(db, 'businesses', b.id), { mapImage: small }); saved += b.mapImage.length - small.length; } done++; opt.textContent = `Optimizando… ${done}/${heavyLogos.length}`; } catch (e) { console.warn(b.id, e); }
+        }
+        toast(`Listo: ${done} logos optimizados, ${Math.round(saved / 1024)} KB menos por visita.`); loadTab('negocios');
+      };
       const saveEnd = async (id, end) => {
         try { await updateDoc(doc(db, 'businesses', id), { subscriptionEnd: end, subscriptionActive: !!end && end >= dateISO(new Date()), updatedAt: serverTimestamp() }); toast(end ? `Plan vigente hasta el ${formatDateES(end)}.` : 'Fecha eliminada.'); loadTab('negocios'); } catch (e) { toast(e.message); }
       };
@@ -491,7 +502,7 @@
         btn.disabled = true; btn.textContent = 'Aprobando...';
         try {
           const batch = writeBatch(db);
-          batch.update(doc(db, 'payments', pid), { status: 'approved', approvedAt: serverTimestamp() });
+          batch.update(doc(db, 'payments', pid), { status: 'approved', approvedAt: serverTimestamp(), voucher: '', voucherDeleted: true });
           let current = null; try { const s = await getDoc(doc(db, 'businesses', bid)); current = s.exists() ? s.data() : null; } catch (_) {}
           batch.update(doc(db, 'businesses', bid), { plan, subscriptionActive: true, subscriptionEnd: addDaysISO(current && current.plan === plan ? renewalBase(current) : null, 30), updatedAt: serverTimestamp() });
           await batch.commit();

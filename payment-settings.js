@@ -72,7 +72,7 @@ export function whatsappURL(business) {
   return `https://wa.me/${number}?text=${encodeURIComponent('Hola '+business.name+', vi su negocio en EventMaps y deseo información.')}`;
 }
 export function installMapEffects() {
-  const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./map-premium.css?v=10',import.meta.url).href;document.head.append(link);
+  const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./map-premium.css?v=11',import.meta.url).href;document.head.append(link);
   const pause=()=>document.documentElement.classList.toggle('em-map-paused',document.hidden);document.addEventListener('visibilitychange',pause);pause();
 }
 

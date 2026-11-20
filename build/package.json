@@ -1,0 +1,1 @@
+{ "private": true, "devDependencies": { "tailwindcss": "3.4.17", "esbuild": "0.24.2" } }

@@ -171,22 +171,47 @@ loadBaseMap(0);
 L.control.zoom({ position: 'topright' }).addTo(map);
 map.whenReady(() => [250, 900].forEach(ms => setTimeout(() => map.invalidateSize({ pan: false }), ms)));
 window.addEventListener('resize', debounce(() => map.invalidateSize({ pan: false }), 300));
-const markerLayer = L.layerGroup().addTo(map);
+const goldLayer = L.layerGroup().addTo(map);
+const clusterLayer = L.markerClusterGroup ? L.markerClusterGroup({
+  maxClusterRadius: 55, disableClusteringAtZoom: 16, showCoverageOnHover: false, spiderfyOnMaxZoom: true, chunkedLoading: true,
+  iconCreateFunction: c => { const n = c.getChildCount(); const s = n < 10 ? 40 : n < 50 ? 48 : 56; return L.divIcon({ className: 'em-cluster-wrap', html: `<div class="em-cluster" style="width:${s}px;height:${s}px">${n}</div>`, iconSize: [s, s] }); }
+}).addTo(map) : L.layerGroup().addTo(map);
+const markerLayer = { clearLayers() { goldLayer.clearLayers(); clusterLayer.clearLayers(); } };
+function updateMotion() {
+  const bounds = map.getBounds(); let n = 0;
+  goldLayer.eachLayer(m => { if (bounds.contains(m.getLatLng())) n++; });
+  n += document.querySelectorAll('.leaflet-marker-pane .em-pin:not(.pro)').length;
+  document.documentElement.classList.toggle('em-map-paused', document.hidden || n > 45);
+}
+map.on('moveend zoomend', debounce(updateMotion, 150));
+document.addEventListener('visibilitychange', () => setTimeout(updateMotion, 0));
 let gpsMarker = null, searchMarker = null;
 
 // ---------------------------------------------------------------------------
 // Datos en tiempo real (Firestore)
 // ---------------------------------------------------------------------------
 function subscribePublic() {
+  try {
+    const quick = JSON.parse(localStorage.getItem('em_quick_biz') || 'null');
+    if (quick && Array.isArray(quick.list) && Date.now() - quick.t < 7 * 864e5 && !state.businesses.size) { state.businesses = new Map(quick.list.map(b => [b.id, b])); redraw(); }
+  } catch (_) {}
   onSnapshot(query(collection(db, 'businesses'), where('status', '==', 'approved')), snap => {
     state.businesses = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
     redraw();
+    if (!snap.metadata.fromCache) setTimeout(() => { try { const list = [...state.businesses.values()].map(({ id, name, category, plan, lat, lng, address, department, district, country, promo, paused, subscriptionActive, subscriptionEnd, status }) => ({ id, name, category, plan, lat, lng, address, department, district, country, promo, paused, subscriptionActive, subscriptionEnd, status })); localStorage.setItem('em_quick_biz', JSON.stringify({ t: Date.now(), list })); } catch (_) {} }, 0);
     openFromURL();
   }, e => { console.error(e); $('#resultCount').textContent = 'No se pudieron cargar los negocios.'; });
-  onSnapshot(query(collection(db, 'events'), where('status', '==', 'approved')), snap => {
-    state.events = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    redraw(); checkReminders();
-  }, e => console.error(e));
+  const onEvents = snap => { state.events = snap.docs.map(d => ({ id: d.id, ...d.data() })); redraw(); checkReminders(); };
+  const since = datePlus(-30);
+  const allEvents = () => onSnapshot(query(collection(db, 'events'), where('status', '==', 'approved')), snap => { onEvents({ docs: snap.docs.filter(d => (d.data().endDate || d.data().date || '') >= since) }); }, e => console.error(e));
+  // Requiere el índice compuesto events(status ASC, endDate ASC). Si aún no existe, usa la consulta anterior.
+  let stopRecent = null;
+  stopRecent = onSnapshot(query(collection(db, 'events'), where('status', '==', 'approved'), where('endDate', '>=', since)), onEvents, e => {
+    if (stopRecent) stopRecent();
+    if (e.code === 'failed-precondition') console.warn('Crea el índice events(status, endDate) para descargar menos eventos:', e.message);
+    else console.error(e);
+    allEvents();
+  });
   onSnapshot(collection(db, 'categories'), snap => {
     const cats = snap.docs.map(d => d.data()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(c => c.name).filter(Boolean);
     state.categories = cats.length ? cats : [...DEFAULT_CATEGORIES];
@@ -271,10 +296,11 @@ function redraw() {
     const m = L.marker([b.lat, b.lng], {
       icon: L.divIcon({ className: 'bubble-wrap', html, iconSize: [130, 96], iconAnchor: [65, 70] }),
       title: `${b.name}, ${b.category}${evCount ? `, ${evCount} eventos` : ''}`, alt: b.name, keyboard: true, riseOnHover: true
-    }).addTo(markerLayer);
+    }).addTo(b.plan === 'Pro' ? goldLayer : clusterLayer);
     m.on('click', () => openBusiness(b.id));
     m.on('keypress', e => { if (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ') openBusiness(b.id); });
   });
+  requestAnimationFrame(updateMotion);
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +441,7 @@ function goToPlace(p) {
   setTimeout(redraw, 900); closeSuggest();
   toast('Mostrando negocios cerca de esa dirección.');
 }
-search.addEventListener('input', debounce(e => { state.query = e.target.value.trim(); redraw(); renderSuggest(); if (state.query) track('search', { search_term: state.query }); }, 200));
+search.addEventListener('input', debounce(e => { state.query = e.target.value.trim(); redraw(); renderSuggest(); if (state.query) track('search', { search_term: state.query }); }, 350));
 search.addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); searchAddress(); }
   if (e.key === 'Escape') closeSuggest();
@@ -495,7 +521,8 @@ function openBusiness(id) {
   const b = state.businesses.get(id); if (!b) return;
   state.selected = id; map.flyTo([b.lat, b.lng], 17, { duration: .6 });
   renderSheet(b); const sh = $('#sheet'); sh.classList.add('open'); setTimeout(() => $('#sheetTitle')?.focus(), 350);
-  bumpStat(id, 'views'); track('view_item', { item_id: id, item_name: b.name, item_category: b.category });
+  { const k = `em_view_${id}_${todayISO()}`; let seen = false; try { seen = !!localStorage.getItem(k); localStorage.setItem(k, '1'); } catch (_) {} if (!seen) bumpStat(id, 'views'); }
+  track('view_item', { item_id: id, item_name: b.name, item_category: b.category });
   history.replaceState(null, '', `?b=${encodeURIComponent(id)}`);
 }
 function closeSheet() { $('#sheet').classList.remove('open'); state.selected = null; if (location.search) history.replaceState(null, '', location.pathname); }
@@ -527,11 +554,11 @@ async function renderSheet(b) {
       const cleanWa = String(b.socials?.wa || '').replace(/\D/g, '');
       return cleanWa ? `<a class="main-btn inline-flex items-center justify-center gap-2 mt-3" style="background:#16a34a;color:#fff;text-decoration:none" href="https://wa.me/${cleanWa}?text=${encodeURIComponent('Hola ' + b.name + ', vi su local en EventMaps y deseo información.')}" target="_blank" rel="noopener"><span>💬</span> Escribir por WhatsApp</a>` : '';
     })()}
-    <h3 class="section-title">Galería</h3><div class="gallery" id="gallery"><p class="muted text-xs">Cargando fotos…</p></div>
+    <h3 class="section-title">Galería</h3><div class="gallery" id="gallery" aria-busy="true"><span class="skel skel-photo"></span><span class="skel skel-photo"></span><span class="skel skel-photo"></span></div>
     <div class="grid grid-cols-3 gap-2 mt-2"><button class="soft-btn" id="favBtn" aria-pressed="${state.favorites.has(b.id)}">${state.favorites.has(b.id) ? '♥ Guardado' : '♡ Guardar'}</button><button class="soft-btn" id="shareBtn">↗ Compartir</button><button class="soft-btn" id="directionsBtn">🧭 Cómo llegar</button></div>
     <h3 class="section-title">Eventos y actividades</h3>${eventHTML || '<p class="muted text-sm">Sin eventos próximos por ahora.</p>'}
     ${b.promo ? '<button class="soft-btn w-full mt-3" id="couponBtn">🎟 Cupón: 10% de descuento · Ver QR</button>' : ''}
-    <h3 class="section-title" id="reviewsTitle">Reseñas</h3><div id="reviews" aria-live="polite"><p class="muted text-xs">Cargando reseñas…</p></div>
+    <h3 class="section-title" id="reviewsTitle">Reseñas</h3><div id="reviews" aria-live="polite"><div class="skel skel-line"></div><div class="skel skel-line" style="width:70%"></div></div>
     <div id="reviewForm"></div>`;
   loadPhotos(b).then(ph => { const g = $('#gallery'); if (!g || state.selected !== b.id) return; g.innerHTML = ph.slice(0, limitP).map((p, i) => `<img src="${esc(p)}" alt="Foto ${i + 1} de ${esc(b.name)}" loading="lazy">`).join('') || '<p class="muted text-xs">Este negocio aún no subió fotos.</p>'; });
   $('#favBtn').onclick = () => toggleFavorite(b);
@@ -567,24 +594,35 @@ async function shareBusiness(b) {
   try { if (navigator.share) await navigator.share({ title: b.name, text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); toast('Enlace copiado.'); } }
   catch (_) { /* cancelado */ }
 }
+const scriptLoads = new Map();
+function loadScriptOnce(src) {
+  if (!scriptLoads.has(src)) scriptLoads.set(src, new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.async = true; s.onload = ok; s.onerror = () => { scriptLoads.delete(src); fail(new Error('script')); }; document.head.append(s); }));
+  return scriptLoads.get(src);
+}
 function showCoupon(b) {
   const code = `EM-${b.id.slice(0, 5).toUpperCase()}-10OFF`;
   showModal(`${modalHeader('Tu cupón de descuento', `Muestra este código en ${esc(b.name)} para solicitar tu 10% de descuento.`)}<div id="qr" class="flex justify-center my-5" role="img" aria-label="Código QR del cupón ${code}"></div><div class="text-center text-xl font-extrabold tracking-wider">${code}</div>`);
-  if (window.QRCode) new QRCode($('#qr'), { text: code, width: 180, height: 180 });
+  loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js').then(() => { if (window.QRCode && $('#qr')) new QRCode($('#qr'), { text: code, width: 180, height: 180 }); }).catch(() => { const q = $('#qr'); if (q) q.textContent = code; });
 }
 
 // ---------------------------------------------------------------------------
 // Reseñas verificadas
 // ---------------------------------------------------------------------------
-async function loadReviews(b) {
+const reviewCache = new Map();
+async function loadReviews(b, force = false) {
   let list = [];
-  try { list = (await getDocs(query(collection(db, 'reviews'), where('businessId', '==', b.id), where('status', '==', 'visible')))).docs.map(d => ({ id: d.id, ...d.data() })); }
-  catch (e) { console.warn(e); }
+  const hit = reviewCache.get(b.id);
+  if (!force && hit && Date.now() - hit.t < 10 * 60e3) list = hit.list;
+  else {
+    try { list = (await getDocs(query(collection(db, 'reviews'), where('businessId', '==', b.id), where('status', '==', 'visible')))).docs.map(d => ({ id: d.id, ...d.data() })); reviewCache.set(b.id, { t: Date.now(), list }); }
+    catch (e) { console.warn(e); }
+  }
   if (state.selected !== b.id) return;
   list.sort((x, y) => (y.verified - x.verified) || ((y.createdAt?.seconds || 0) - (x.createdAt?.seconds || 0)));
   const avg = list.length ? (list.reduce((s, r) => s + r.stars, 0) / list.length).toFixed(1) : '—';
   $('#reviewsTitle').textContent = `Reseñas · ${avg} ★ (${list.length})`;
-  $('#reviews').innerHTML = list.map(r => `<div class="review-card"><div class="row-between"><span class="text-amber-500" aria-label="${r.stars} de 5 estrellas">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</span>${r.verified ? '<span class="pill ok" title="Marcó asistencia a un evento de este negocio">✓ Verificada</span>' : ''}</div><p class="text-sm mt-1">${esc(r.text)}</p><p class="muted text-xs mt-1">${esc(r.displayName || 'Usuario')}</p></div>`).join('') || '<p class="muted text-sm">Todavía no hay reseñas.</p>';
+  const shown = Math.min(list.length, b._revShown || 5);
+  $('#reviews').innerHTML = list.slice(0, shown).map(r => `<div class="review-card"><div class="row-between"><span class="text-amber-500" aria-label="${r.stars} de 5 estrellas">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</span>${r.verified ? '<span class="pill ok" title="Marcó asistencia a un evento de este negocio">✓ Verificada</span>' : ''}</div><p class="text-sm mt-1">${esc(r.text)}</p><p class="muted text-xs mt-1">${esc(r.displayName || 'Usuario')}</p></div>`).join('') || '<p class="muted text-sm">Todavía no hay reseñas.</p>'; if (list.length > shown) { const more = document.createElement('button'); more.className = 'soft-btn mt-2'; more.textContent = `Ver más reseñas (${list.length - shown})`; more.onclick = () => { b._revShown = shown + 5; loadReviews(b); }; $('#reviews').append(more); }
   renderReviewForm(b, list.find(r => state.user && r.uid === state.user.uid));
 }
 function attendedEventFor(bid) {
@@ -614,10 +652,10 @@ function renderReviewForm(b, mine) {
     try {
       if (mine) await updateDoc(r, { stars, text, updatedAt: serverTimestamp() });
       else await setDoc(r, { businessId: b.id, uid: state.user.uid, displayName: state.user.displayName || state.user.email.split('@')[0], stars, text, verified: !!eid, eventId: eid || null, status: 'visible', createdAt: serverTimestamp() });
-      track('review', { item_id: b.id, stars }); toast('¡Gracias por tu reseña!'); loadReviews(b);
+      track('review', { item_id: b.id, stars }); toast('¡Gracias por tu reseña!'); loadReviews(b, true);
     } catch (err) { toast(errMsg(err)); }
   };
-  const del = $('#delReview'); if (del) del.onclick = async () => { if (!confirm('¿Eliminar tu reseña?')) return; try { await deleteDoc(doc(db, 'reviews', `${b.id}_${state.user.uid}`)); loadReviews(b); } catch (e) { toast(errMsg(e)); } };
+  const del = $('#delReview'); if (del) del.onclick = async () => { if (!confirm('¿Eliminar tu reseña?')) return; try { await deleteDoc(doc(db, 'reviews', `${b.id}_${state.user.uid}`)); loadReviews(b, true); } catch (e) { toast(errMsg(e)); } };
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,13 +1063,20 @@ function loadImage(file) {
     img.src = url;
   });
 }
+const WEBP_OK = (() => { try { const c = document.createElement('canvas'); c.width = c.height = 2; return c.toDataURL('image/webp').startsWith('data:image/webp'); } catch (_) { return false; } })();
 function imageToDataURL(img, maxSide, quality) {
   const s = Math.min(1, maxSide / Math.max(img.width, img.height)); const c = document.createElement('canvas');
   c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
   const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+  if (WEBP_OK) { const w = c.toDataURL('image/webp', quality); if (w.startsWith('data:image/webp')) return w; }
   return c.toDataURL('image/jpeg', quality);
 }
 // Reduce tamaño y calidad hasta que cada foto quepa en su parte del presupuesto del documento.
+async function compressThumb(file) {
+  const img = await loadImage(file); let out = '';
+  for (const [side, q] of [[144, 0.75], [128, 0.7], [112, 0.65], [96, 0.6], [80, 0.55]]) { out = imageToDataURL(img, side, q); if (out.length <= 8000) return out; }
+  return out;
+}
 async function compressToBudget(file, budget) {
   const img = await loadImage(file);
   const steps = [[1200, 0.72], [1000, 0.66], [900, 0.6], [800, 0.55], [700, 0.5], [600, 0.45], [500, 0.42], [420, 0.4]];
@@ -1114,7 +1159,7 @@ async function openBusinessPanel(bid = null) {
         socials: Object.fromEntries(['wa', 'fb', 'ig', 'tt', 'web'].map(k => [k, String(fd.get('social_' + k) || '').trim().slice(0, 200)])),
         updatedAt: serverTimestamp()
       };
-      const mapFile = $('#mapImage').files[0]; if (mapFile) { if (!/^image\/(jpeg|png|webp)$/.test(mapFile.type)) throw new Error('El marcador debe ser JPG, PNG o WebP.'); upd.mapImage = await compressToBudget(mapFile, 45000); }
+      const mapFile = $('#mapImage').files[0]; if (mapFile) { if (!/^image\/(jpeg|png|webp)$/.test(mapFile.type)) throw new Error('El marcador debe ser JPG, PNG o WebP.'); upd.mapImage = await compressThumb(mapFile); }
       if (files.length) { const r = await uploadPhotos(b, files); upd.photos = r.photos; }
       await updateDoc(doc(db, 'businesses', b.id), upd);
       toast('Información guardada.'); track('business_update'); openBusinessPanel(b.id);
@@ -1322,7 +1367,8 @@ async function adminPayments() {
         const batch = writeBatch(db);
         batch.update(doc(db, 'payments', pid), {
           status: 'approved',
-          approvedAt: serverTimestamp()
+          approvedAt: serverTimestamp(),
+          voucher: '', voucherDeleted: true
         });
         batch.update(doc(db, 'businesses', bid), {
           plan,
