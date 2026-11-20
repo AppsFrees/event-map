@@ -136,7 +136,7 @@
     import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js';
     import { initializeFirestore, collection, doc, getDoc, getDocs, updateDoc, deleteDoc, addDoc, query, orderBy, limit, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
     import { firebaseConfig } from './firebase-config.js';
-    import {renderPaymentSettings} from '../payment-settings.js';
+    import {renderPaymentSettings, planStatus, reminderWhatsAppURL, formatDateES, renewalBase, addDaysISO, REMIND_DAYS} from '../payment-settings.js';
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -354,9 +354,12 @@
 
     // 2. Negocios
     async function renderNegocios(root) {
-      const biz = (await allDocs('businesses')).sort((a,b) => (a.status === 'pending' ? -1 : 1));
+      const rank = b => b.status === 'pending' ? -1e6 : (planStatus(b).days ?? 1e6);
+      const biz = (await allDocs('businesses')).sort((a,b) => rank(a) - rank(b));
+      const expiring = biz.filter(b => b.status === 'approved' && b.plan !== 'Free' && planStatus(b).days !== null && planStatus(b).days <= REMIND_DAYS);
       root.innerHTML = `
         <div class="space-y-3">
+          ${expiring.length ? `<div class="card" style="background:#fef3c7;border-color:#fcd34d"><strong>⏰ ${expiring.length} ${expiring.length === 1 ? 'negocio tiene' : 'negocios tienen'} el plan vencido o por vencer</strong><p class="text-xs mt-1">Usa el botón de WhatsApp de cada uno para recordarles la renovación.</p></div>` : ''}
           ${biz.map(b => `
             <div class="card">
               <div class="flex items-center justify-between flex-wrap gap-2">
@@ -366,7 +369,8 @@
                 </div>
                 <div class="flex gap-1">
                   <span class="pill ${b.status === 'approved' ? 'ok' : b.status === 'pending' ? 'warn' : 'bad'}">${esc(b.status)}</span>
-                  <span class="pill font-bold">Plan ${esc(b.plan)}</span>
+                  <span class="pill font-bold">Plan ${esc(b.plan === 'Pro' ? 'Gold' : b.plan)}</span>
+                  ${b.plan !== 'Free' ? `<span class="pill ${planStatus(b).tone}" title="${b.subscriptionEnd ? 'Vence el ' + esc(formatDateES(b.subscriptionEnd)) : ''}">⏳ ${esc(planStatus(b).label)}</span>` : ''}
                 </div>
               </div>
               <p class="muted text-xs mt-2">${esc(b.address)} · Dueño: ${esc(b.ownerEmail || b.ownerUid)}</p>
@@ -376,7 +380,9 @@
                 ${b.status !== 'rejected' ? `<button class="soft-btn danger text-xs py-1.5 px-3" data-rejbiz="${b.id}">✕ Rechazar</button>` : ''}
                 <button class="soft-btn text-xs py-1.5 px-3" data-pausebiz="${b.id}">${b.paused ? 'Reactivar' : 'Pausar'}</button>
                 <button class="soft-btn danger text-xs py-1.5 px-3" data-delbiz="${b.id}">Eliminar</button>
+                ${b.plan !== 'Free' ? (reminderWhatsAppURL(b) ? `<a class="soft-btn text-xs py-1.5 px-3" style="background:#16a34a;color:#fff;border-color:#16a34a" href="${esc(reminderWhatsAppURL(b))}" target="_blank" rel="noopener noreferrer">💬 Avisar por WhatsApp</a>` : `<button class="soft-btn text-xs py-1.5 px-3" disabled title="El negocio no registró un WhatsApp válido">💬 Sin WhatsApp</button>`) : ''}
               </div>
+              ${b.plan !== 'Free' ? `<div class="flex flex-wrap items-center gap-2 mt-2 text-xs"><label for="end_${b.id}" class="font-semibold">Vence el:</label><input id="end_${b.id}" type="date" class="input" style="width:auto;padding:4px 8px" value="${esc(b.subscriptionEnd || '')}" data-endinput="${b.id}"><button class="soft-btn text-xs py-1 px-2" data-saveend="${b.id}">Guardar fecha</button><button class="soft-btn text-xs py-1 px-2" data-add30="${b.id}">+30 días</button></div>` : ''}
             </div>
           `).join('') || '<div class="card muted text-center">No hay negocios registrados.</div>'}
         </div>
@@ -402,6 +408,11 @@
           toast('Estado de pausa modificado.'); loadTab('negocios');
         } catch (e) { toast(e.message); }
       });
+      const saveEnd = async (id, end) => {
+        try { await updateDoc(doc(db, 'businesses', id), { subscriptionEnd: end, subscriptionActive: !!end && end >= dateISO(new Date()), updatedAt: serverTimestamp() }); toast(end ? `Plan vigente hasta el ${formatDateES(end)}.` : 'Fecha eliminada.'); loadTab('negocios'); } catch (e) { toast(e.message); }
+      };
+      $$('[data-saveend]', root).forEach(btn => btn.onclick = () => saveEnd(btn.dataset.saveend, $(`[data-endinput="${btn.dataset.saveend}"]`, root).value));
+      $$('[data-add30]', root).forEach(btn => btn.onclick = () => { const b = biz.find(x => x.id === btn.dataset.add30); saveEnd(b.id, addDaysISO(renewalBase(b), 30)); });
       $$('[data-delbiz]', root).forEach(btn => btn.onclick = async () => {
         if (!confirm('¿Eliminar este negocio definitivamente?')) return;
         try {
@@ -481,9 +492,10 @@
         try {
           const batch = writeBatch(db);
           batch.update(doc(db, 'payments', pid), { status: 'approved', approvedAt: serverTimestamp() });
-          batch.update(doc(db, 'businesses', bid), { plan, subscriptionActive: true, subscriptionEnd: datePlus(30), updatedAt: serverTimestamp() });
+          let current = null; try { const s = await getDoc(doc(db, 'businesses', bid)); current = s.exists() ? s.data() : null; } catch (_) {}
+          batch.update(doc(db, 'businesses', bid), { plan, subscriptionActive: true, subscriptionEnd: addDaysISO(current && current.plan === plan ? renewalBase(current) : null, 30), updatedAt: serverTimestamp() });
           await batch.commit();
-          toast(`¡Pago aprobado! Plan ${plan} activado por 30 días.`);
+          toast(`¡Pago aprobado! Plan ${plan === 'Pro' ? 'Gold' : plan} extendido 30 días.`);
           loadTab('pagos');
         } catch (e) { toast(e.message); btn.disabled = false; }
       });
