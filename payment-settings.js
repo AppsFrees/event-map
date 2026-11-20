@@ -75,3 +75,39 @@ export function installMapEffects() {
   const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./map-premium.css',import.meta.url).href;document.head.append(link);
   const pause=()=>document.documentElement.classList.toggle('em-map-paused',document.hidden);document.addEventListener('visibilitychange',pause);pause();
 }
+
+// ---------- Vencimiento de planes ----------
+export const REMIND_DAYS = 7;
+export function planDaysLeft(business) {
+  const end = String(business?.subscriptionEnd || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
+  const [y, m, d] = end.split('-').map(Number);
+  const now = new Date(); const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((Date.UTC(y, m - 1, d) - today) / 86400000);
+}
+export const formatDateES = iso => { const [y, m, d] = String(iso || '').split('-'); return y && m && d ? `${d}/${m}/${y}` : ''; };
+export function planStatus(business) {
+  if (!business || business.plan === 'Free') return { label: 'Plan gratuito', tone: 'gray', days: null };
+  const days = planDaysLeft(business);
+  if (days === null) return { label: 'Sin fecha de vencimiento', tone: 'gray', days };
+  if (days < 0) return { label: `Venció hace ${-days} ${-days === 1 ? 'día' : 'días'}`, tone: 'bad', days };
+  if (days === 0) return { label: 'Vence hoy', tone: 'bad', days };
+  if (days <= REMIND_DAYS) return { label: `Vence en ${days} ${days === 1 ? 'día' : 'días'}`, tone: 'warn', days };
+  return { label: `Quedan ${days} días`, tone: 'ok', days };
+}
+export function renewalBase(business) {
+  const days = planDaysLeft(business);
+  return days !== null && days > 0 ? business.subscriptionEnd : null;
+}
+export function addDaysISO(baseISO, n) {
+  const d = baseISO ? new Date(baseISO + 'T12:00:00') : new Date(); d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export function reminderWhatsAppURL(business) {
+  const base = whatsappURL(business); if (!base) return '';
+  const st = planStatus(business); const end = formatDateES(business.subscriptionEnd);
+  const plan = planLabel(business.plan);
+  const when = st.days === null ? '' : st.days < 0 ? `venció el ${end}` : st.days === 0 ? `vence hoy (${end})` : `vence el ${end} (quedan ${st.days} ${st.days === 1 ? 'día' : 'días'})`;
+  const msg = `Hola ${business.name}, te saludamos de EventMaps. Tu plan ${plan} ${when}. Para mantener tu negocio destacado en el mapa, renueva desde EventMaps → Mis negocios → Renovar plan, pagando por Yape o Plin y enviando tu comprobante. ¡Gracias!`;
+  return base.replace(/\?text=.*$/, '?text=' + encodeURIComponent(msg));
+}

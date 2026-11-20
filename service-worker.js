@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eventmaps-shell-v6-peru';
+const CACHE_NAME = 'eventmaps-shell-v7-vencimientos';
 const SCOPE_URL = new URL(self.registration.scope);
 const APP_SHELL = ['./payment-settings.js', './map-premium.css', './', './index.html', './app.js', './firebase-config.js', './manifest.webmanifest', './privacy.html', './favicon-32.png', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 const inScope = url => url.origin === SCOPE_URL.origin && url.pathname.startsWith(SCOPE_URL.pathname);

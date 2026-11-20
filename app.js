@@ -14,7 +14,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
 import { getMessaging, getToken, deleteToken, isSupported as messagingSupported } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-messaging.js';
 import { firebaseConfig, appSettings } from './firebase-config.js';
-import {getPaymentSettings, enabledMethods, paymentDetails, wirePaymentCopy, paymentRevision, renderPaymentSettings, whatsappURL, installMapEffects, getAmountPEN, getAmountUSD, planLabel} from './payment-settings.js';
+import {getPaymentSettings, enabledMethods, paymentDetails, wirePaymentCopy, paymentRevision, renderPaymentSettings, whatsappURL, installMapEffects, getAmountPEN, getAmountUSD, planLabel, planStatus, formatDateES, REMIND_DAYS} from './payment-settings.js';
 
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,26 @@ function subscribeUser(uid) {
   state.unsub.forEach(u => u()); state.unsub = [];
   state.unsub.push(onSnapshot(collection(db, 'users', uid, 'favorites'), s => { state.favorites = new Set(s.docs.map(d => d.id)); redraw(); refreshSheet(); }));
   state.unsub.push(onSnapshot(collection(db, 'users', uid, 'agenda'), s => { state.agenda = new Map(s.docs.map(d => [d.id, d.data().businessId])); redraw(); refreshSheet(); checkReminders(); }));
-  state.unsub.push(onSnapshot(query(collection(db, 'businesses'), where('ownerUid', '==', uid)), s => { state.myBusinesses = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAccountButton(); }));
+  state.unsub.push(onSnapshot(query(collection(db, 'businesses'), where('ownerUid', '==', uid)), s => { state.myBusinesses = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAccountButton(); checkPlanExpiry(); }));
+}
+
+// Alerta al dueño cuando su plan está por vencer (una vez al día por negocio)
+function checkPlanExpiry() {
+  const due = state.myBusinesses.filter(b => b.status === 'approved' && b.plan !== 'Free' && planStatus(b).days !== null && planStatus(b).days <= REMIND_DAYS);
+  const key = b => `em_plan_alert_${b.id}_${todayISO()}`;
+  const pending = due.filter(b => { try { return !localStorage.getItem(key(b)); } catch (_) { return true; } });
+  if (!pending.length) return;
+  const b = pending[0];
+  try { localStorage.setItem(key(b), '1'); } catch (_) {}
+  const st = planStatus(b);
+  if ($('#modalBackdrop').classList.contains('show')) { toast(`⏰ ${b.name}: tu plan ${planLabel(b.plan)} ${st.label.toLowerCase()}.`); return; }
+  const expired = st.days < 0;
+  showModal(`${modalHeader(expired ? '⚠️ Tu plan venció' : '⏰ Tu plan está por vencer', esc(b.name))}
+    <div class="banner ${expired || st.days === 0 ? 'warn' : 'info'}"><strong>Plan ${esc(planLabel(b.plan))}: ${esc(st.label)}</strong><br>Fecha de vencimiento: ${esc(formatDateES(b.subscriptionEnd))}</div>
+    <p class="text-sm">${expired ? 'Tu negocio ya no aparece destacado en el mapa. Renueva para recuperar tu visibilidad.' : 'Renueva a tiempo para que tu negocio siga destacado en el mapa sin interrupciones. Los días que te quedan se suman a la renovación.'}</p>
+    <div class="flex gap-2 mt-4"><button class="main-btn" id="renewNow">💳 Renovar ahora</button><button class="soft-btn" id="renewLater">Más tarde</button></div>`);
+  $('#renewNow').onclick = () => { hideModal(); openPaymentModal(b); };
+  $('#renewLater').onclick = hideModal;
 }
 
 const eventsOf = bid => state.events.filter(e => e.businessId === bid).sort((a, b) => a.date.localeCompare(b.date));
@@ -1047,7 +1066,7 @@ async function openBusinessPanel(bid = null) {
   const editing = evs.find(e => e.id === editingEventId) || null;
   const lim = planLimits[b.plan];
   const social = b.socials || {};
-  openPanel(`<div class="row-between"><div><p class="muted text-xs">PANEL DEL NEGOCIO</p><h1 tabindex="-1" class="text-2xl font-extrabold">${esc(b.name)}</h1><div class="flex gap-2 flex-wrap mt-1">${statusPill(b.status)}<span class="pill font-bold">Plan ${esc(b.plan)}</span>${b.plan !== 'Free' ? `<span class="pill ${subscriptionOk(b) ? 'ok' : 'bad'}">${subscriptionOk(b) ? 'Suscripción activa' + (b.subscriptionEnd ? ' hasta ' + esc(b.subscriptionEnd) : '') : 'Suscripción inactiva'}</span>` : ''}${b.paused ? '<span class="pill gray">Pausado</span>' : ''}</div></div><div class="flex gap-2"><button class="main-btn" id="upgradePlanBtn" style="width:auto;min-height:38px;padding:6px 14px;background:linear-gradient(135deg,#059669,#10b981);font-size:0.78rem">💳 ${b.plan === 'Free' ? 'Mejorar Plan' : 'Renovar Plan'}</button><button class="soft-btn" id="px">Cerrar</button></div></div>
+  openPanel(`<div class="row-between"><div><p class="muted text-xs">PANEL DEL NEGOCIO</p><h1 tabindex="-1" class="text-2xl font-extrabold">${esc(b.name)}</h1><div class="flex gap-2 flex-wrap mt-1">${statusPill(b.status)}<span class="pill font-bold">Plan ${esc(b.plan)}</span>${b.plan !== 'Free' ? `<span class="pill ${subscriptionOk(b) ? 'ok' : 'bad'}">${subscriptionOk(b) ? 'Suscripción activa' + (b.subscriptionEnd ? ' hasta ' + esc(formatDateES(b.subscriptionEnd)) : '') : 'Suscripción inactiva'}</span><span class="pill ${planStatus(b).tone}">⏳ ${esc(planStatus(b).label)}</span>` : ''}${b.paused ? '<span class="pill gray">Pausado</span>' : ''}</div></div><div class="flex gap-2"><button class="main-btn" id="upgradePlanBtn" style="width:auto;min-height:38px;padding:6px 14px;background:linear-gradient(135deg,#059669,#10b981);font-size:0.78rem">💳 ${b.plan === 'Free' ? 'Mejorar Plan' : 'Renovar Plan'}</button><button class="soft-btn" id="px">Cerrar</button></div></div>
     ${mine.length > 1 ? `<div class="field"><label for="bizSel">Negocio</label><select id="bizSel">${mine.map(x => `<option value="${esc(x.id)}" ${x.id === b.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
     ${b.status === 'rejected' ? `<div class="banner warn">Solicitud rechazada: ${esc(b.rejectReason || 'sin motivo')}. Corrige los datos y contacta al administrador.</div>` : ''}
     ${b.status === 'pending' ? '<div class="banner info">Tu negocio está en revisión. Puedes completar la ficha mientras tanto; podrás publicar eventos cuando sea aprobado.</div>' : ''}
