@@ -91,7 +91,7 @@ const PERU_DEPARTMENTS = [
   'Huancavelica', 'Huánuco', 'Ica', 'Junín', 'La Libertad', 'Lambayeque', 'Lima', 'Loreto',
   'Madre de Dios', 'Moquegua', 'Pasco', 'Piura', 'Puno', 'San Martín', 'Tacna', 'Tumbes', 'Ucayali'
 ];
-const COUNTRIES = ['Perú', 'México', 'Colombia', 'Argentina', 'Chile', 'Ecuador', 'Bolivia', 'España', 'Estados Unidos', 'Otro'];
+const COUNTRIES = ['Perú']; // Por ahora EventMaps opera solo en Perú
 const DEPT_COORDS = {
   'Lima': [-12.0464, -77.0428, 12],
   'Callao': [-12.0566, -77.1181, 13],
@@ -152,7 +152,8 @@ if (!window.L) {
   throw new Error('Leaflet no disponible');
 }
 const LIMA_CENTER = [-12.0464, -77.0428];
-const map = L.map('map', { zoomControl: false, attributionControl: true, keyboard: true }).setView(LIMA_CENTER, 12);
+const PERU_BOUNDS = L.latLngBounds([-19.5, -82.5], [0.8, -67.5]);
+const map = L.map('map', { zoomControl: false, attributionControl: true, keyboard: true, minZoom: 5, maxBounds: PERU_BOUNDS, maxBoundsViscosity: 0.8 }).setView(LIMA_CENTER, 12);
 const mapProviders = [
   { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', options: { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' } },
   { url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', options: { subdomains: 'abc', maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · HOT' } },
@@ -277,7 +278,7 @@ $('#chips').addEventListener('click', e => {
 // Búsqueda por texto y por dirección (Nominatim / OpenStreetMap)
 // ---------------------------------------------------------------------------
 async function geocode(q, opts = {}) {
-  const params = new URLSearchParams({ q, format: 'jsonv2', limit: String(opts.limit || 5), 'accept-language': 'es', addressdetails: '0' });
+  const params = new URLSearchParams({ q, format: 'jsonv2', limit: String(opts.limit || 5), 'accept-language': 'es', addressdetails: '0', countrycodes: 'pe' });
   const r = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: 'application/json' } });
   if (!r.ok) throw new Error('geocode');
   return (await r.json()).map(x => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon) }));
@@ -320,7 +321,7 @@ function openGeoFilterModal() {
     <div class="field mt-3">
       <label for="fCountry">País</label>
       <select id="fCountry" class="input">
-        <option value="Todos" ${currentCountry === 'Todos' ? 'selected' : ''}>Todos los países</option>
+        <option value="Todos" ${currentCountry === 'Todos' ? 'selected' : ''}>Todo el Perú</option>
         ${COUNTRIES.map(c => `<option value="${c}" ${c === currentCountry ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
     </div>
@@ -946,7 +947,7 @@ function openRegistration() {
     <div class="field"><label for="rCat">Categoría *</label><select id="rCat" name="category" required><option value="">Selecciona una categoría</option>${state.categories.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
     ${locationPickerHTML()}
     <fieldset class="field"><legend class="label">3. Elige tu plan</legend><div class="plan-grid">${['Free', 'Standard', 'Pro'].map((p, i) => `<label class="plan ${i === 0 ? 'selected' : ''}"><input type="radio" name="plan" value="${p}" ${i === 0 ? 'checked' : ''}><strong>${p === 'Pro' ? 'Gold' : p}</strong>${planLimits[p].photos} foto${planLimits[p].photos > 1 ? 's' : ''}<br>${planLimits[p].events} evento${planLimits[p].events > 1 ? '<br>eventos' : '<br>evento'}${p === 'Pro' ? '<br>Destacado' : ''}</label>`).join('')}</div></fieldset>
-    <section id="registrationPayment" class="banner info" hidden><strong class="block text-sm">4. Datos de pago</strong><p class="text-xs mt-1">Completa estos datos antes de enviar la solicitud. El plan se activa solo después de la verificación administrativa.</p><div class="field"><label for="regMethod">Método</label><select id="regMethod" name="paymentMethod"><option value="yape">Yape</option><option value="plin">Plin</option><option value="paypal">PayPal</option><option value="stripe">Tarjeta</option></select></div><div class="field"><label for="regOperation">Código de operación</label><input id="regOperation" name="operationCode" maxlength="40"></div><div class="field"><label for="regVoucher">Comprobante</label><input id="regVoucher" type="file" accept="image/jpeg,image/png,image/webp"></div></section>
+    <section id="registrationPayment" class="banner info" hidden><strong class="block text-sm">4. Datos de pago</strong><p class="text-xs mt-1">Completa estos datos antes de enviar la solicitud. El plan se activa solo después de la verificación administrativa.</p><div class="field"><label for="regMethod">Método</label><select id="regMethod" name="paymentMethod"><option value="yape">Yape</option><option value="plin">Plin</option></select></div><div class="field"><label for="regOperation">Código de operación</label><input id="regOperation" name="operationCode" maxlength="40"></div><div class="field"><label for="regVoucher">Comprobante</label><input id="regVoucher" type="file" accept="image/jpeg,image/png,image/webp"></div></section>
     <button class="main-btn mt-3" type="submit">Enviar solicitud</button></form>`);
   const pos = wireLocationPicker();
   let registrationSettings=null,registrationSending=false,registrationDraft=null,registeredBusiness=null;
@@ -1129,7 +1130,7 @@ async function openPaymentModal(b) {
   const methods=enabledMethods(settings);if(!methods.length){toast('No hay métodos de cobro habilitados. Contacta al administrador.');return;}
   let plan=b.plan==='Pro'?'Pro':'Standard', method=methods[0], sending=false;
   const render=()=>{
-    showModal(`${modalHeader('Planes y suscripción',esc(b.name))}<div class="plan-grid mt-3">${['Standard','Pro'].map(p=>`<button class="plan ${plan===p?'selected':''}" data-buy-plan="${p}"><strong>${planLabel(p)}</strong>S/ ${getAmountPEN(p)} / mes<br>USD ${getAmountUSD(p)}</button>`).join('')}</div><div class="flex gap-2 mt-3">${methods.map(m=>`<button class="soft-btn" data-buy-method="${m}" aria-pressed="${method===m}">${m==='paypal'?'PayPal':m==='yape'?'Yape':'Plin'}</button>`).join('')}</div>${paymentDetails(settings,method,plan)}<form id="paymentForm"><div class="field"><label for="vFile">Comprobante JPG, PNG o WebP</label><input id="vFile" type="file" accept="image/jpeg,image/png,image/webp" required></div><div class="field"><label for="opCode">Código de operación</label><input id="opCode" minlength="3" maxlength="40" required></div><p class="muted text-xs">Verificación administrativa obligatoria antes de activar el plan.</p><button class="main-btn mt-3" id="sendPayBtn">Enviar comprobante</button></form>`);
+    showModal(`${modalHeader('Planes y suscripción',esc(b.name))}<div class="plan-grid mt-3">${['Standard','Pro'].map(p=>`<button class="plan ${plan===p?'selected':''}" data-buy-plan="${p}"><strong>${planLabel(p)}</strong>S/ ${getAmountPEN(p)} / mes</button>`).join('')}</div><div class="flex gap-2 mt-3">${methods.map(m=>`<button class="soft-btn" data-buy-method="${m}" aria-pressed="${method===m}">${m==='paypal'?'PayPal':m==='yape'?'Yape':'Plin'}</button>`).join('')}</div>${paymentDetails(settings,method,plan)}<form id="paymentForm"><div class="field"><label for="vFile">Comprobante JPG, PNG o WebP</label><input id="vFile" type="file" accept="image/jpeg,image/png,image/webp" required></div><div class="field"><label for="opCode">Código de operación</label><input id="opCode" minlength="3" maxlength="40" required></div><p class="muted text-xs">Verificación administrativa obligatoria antes de activar el plan.</p><button class="main-btn mt-3" id="sendPayBtn">Enviar comprobante</button></form>`);
     const root=$('#modal');wirePaymentCopy(root,toast);
     root.querySelectorAll('[data-buy-plan]').forEach(button=>button.onclick=()=>{if(!sending){plan=button.dataset.buyPlan;render();}});
     root.querySelectorAll('[data-buy-method]').forEach(button=>button.onclick=()=>{if(!sending){method=button.dataset.buyMethod;render();}});
