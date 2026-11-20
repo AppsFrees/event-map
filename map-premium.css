@@ -34,3 +34,15 @@ html[data-theme=dark] .pin-name{background:#1f1a2df2;color:#f5f2fc;border-color:
 .em-map-paused .em-pin{animation-play-state:paused!important}
 html.reduce-motion .em-pin{animation:none!important}
 @media(prefers-reduced-motion:reduce){.em-pin{animation:none!important}}
+
+/* Free: estático · Standard: flota suave · Gold: rebote enérgico + pulso que llama la atención */
+.em-pin.free,.em-pin.free .pin-bubble{animation:none!important}
+.em-pin.free .pin-bubble:before{display:none}
+.em-pin.standard{animation:em-float 3.7s ease-in-out infinite}
+.em-pin.pro{animation:em-gold-bounce 2.4s cubic-bezier(.3,0,.3,1) infinite;z-index:2}
+.em-pin .pin-bubble.pro{animation:em-gold-glow 1.6s ease-in-out infinite}
+.em-pin .pin-bubble.pro:before{animation:em-gold-ring 1.6s ease-out infinite;border-width:3px}
+.em-pin .pin-bubble.pro:after{filter:drop-shadow(0 0 3px #fbbf24)}
+.em-pin.pro .pin-name{border-color:#fbbf24;box-shadow:0 2px 10px #fbbf2466}
+@keyframes em-gold-bounce{0%,55%,100%{transform:translateY(0) scale(1)}12%{transform:translateY(-14px) scale(1.08)}24%{transform:translateY(0) scale(.97)}34%{transform:translateY(-6px) scale(1.03)}44%{transform:translateY(0) scale(1)}}
+@keyframes em-gold-ring{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.55)}}

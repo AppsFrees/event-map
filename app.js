@@ -284,9 +284,12 @@ function renderChips() {
   const base = ['Todos', 'Cerca', 'Populares', ...state.categories, 'Promociones', 'Hoy', 'Fin de semana', 'Favoritos', 'Mi agenda'];
   if (!base.includes(state.filter)) state.filter = 'Todos';
   const labels = { Cerca: `📍 Cerca (${state.nearRadiusKm} km)`, Favoritos: '♥ Favoritos', 'Mi agenda': '✓ Mi agenda' };
-  $('#chips').innerHTML = base.map(f => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${f === state.filter}">${esc(labels[f] || f)}</button>`).join('');
+  const g = state.geoFilter, geoOn = !(g.country === 'Todos' && g.department === 'Todos' && g.district === 'Todos');
+  const geoChip = `<button class="chip" id="geoChip" aria-pressed="${geoOn}" aria-haspopup="dialog">📍 Ubicación</button>`;
+  $('#chips').innerHTML = base.map((f, i) => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${f === state.filter}">${esc(labels[f] || f)}</button>${i === 0 ? geoChip : ''}`).join('');
 }
 $('#chips').addEventListener('click', e => {
+  if (e.target.closest('#geoChip')) { openGeoFilterModal(); return; }
   const btn = e.target.closest('[data-filter]'); if (!btn) return;
   const f = btn.dataset.filter;
   if ((f === 'Favoritos' || f === 'Mi agenda') && !state.user) { openAuth('Inicia sesión para ver tus favoritos y tu agenda en todos tus dispositivos.'); return; }
@@ -318,6 +321,7 @@ async function reverseGeocode(lat, lng) {
 }
 
 function updateGeoBadge() {
+  if ($('#chips')) renderChips();
   const badge = $('#geoFilterActiveBadge');
   if (!badge) return;
   const { country, department, district } = state.geoFilter;
@@ -1105,7 +1109,7 @@ async function openBusinessPanel(bid = null) {
         name: String(fd.get('name')).trim(), category: String(fd.get('category')),
         country, department, district,
         hours: String(fd.get('hours') || '').trim(), address: $('#addrInput').value.trim(),
-        lat: pos.lat, lng: pos.lng, description: sanitizeRichHTML($('#pDesc').innerHTML),
+        lat: pos.lat, lng: pos.lng, description: (() => { if (descTooLong('pDesc')) throw new Error(`La descripción del negocio admite máximo ${DESC_LIMITS.pDesc} caracteres.`); return sanitizeRichHTML($('#pDesc').innerHTML); })(),
         promo: fd.get('promo') === 'on', paused: fd.get('paused') === 'on',
         socials: Object.fromEntries(['wa', 'fb', 'ig', 'tt', 'web'].map(k => [k, String(fd.get('social_' + k) || '').trim().slice(0, 200)])),
         updatedAt: serverTimestamp()
@@ -1126,6 +1130,7 @@ async function openBusinessPanel(bid = null) {
     e.preventDefault(); const fd = new FormData(f);
     const title = String(fd.get('title')).trim(), date = String(fd.get('date')), endDate = String(fd.get('endDate') || date), time = String(fd.get('time') || '');
     if (endDate < date) { toast('La fecha «Hasta» no puede ser anterior a «Desde».'); return; }
+    if (descTooLong('eDesc')) { toast(`La descripción del evento admite máximo ${DESC_LIMITS.eDesc} caracteres.`); return; }
     const data = { title, date, endDate, time, description: sanitizeRichHTML($('#eDesc').innerHTML), startAt: startAtOf(date, time), status: 'pending', updatedAt: serverTimestamp() };
     try {
       if (editing) await updateDoc(doc(db, 'events', editing.id), data);
@@ -1135,7 +1140,22 @@ async function openBusinessPanel(bid = null) {
   };
 }
 function editorToolbar(id) { return `<div class="flex flex-wrap gap-2 mb-2" role="toolbar" aria-label="Formato de texto"><button type="button" class="soft-btn" data-format="bold" data-target="${id}" aria-label="Negrita"><b>B</b></button><button type="button" class="soft-btn" data-format="italic" data-target="${id}" aria-label="Cursiva"><i>I</i></button><button type="button" class="soft-btn" data-format="insertUnorderedList" data-target="${id}" aria-label="Lista">• Lista</button>${['😊', '🎉', '☕', '❤️'].map(em => `<button type="button" class="soft-btn" data-emoji="${em}" data-target="${id}" aria-label="Insertar emoji ${em}">${em}</button>`).join('')}</div>`; }
+const DESC_LIMITS = { pDesc: 250, eDesc: 500 };
+const editorTextLen = el => (el.innerText || '').replace(/\n+$/,'').length;
+function limitEditor(el, max) {
+  if (!el || el.dataset.limited) return; el.dataset.limited = '1';
+  const counter = document.createElement('p'); counter.className = 'muted text-xs mt-1'; counter.setAttribute('aria-live', 'polite'); el.after(counter);
+  let lastGood = el.innerHTML;
+  const update = () => { const n = editorTextLen(el); counter.textContent = `${n} / ${max} caracteres`; counter.style.color = n >= max ? '#dc2626' : ''; };
+  if (editorTextLen(el) > max) { el.innerText = (el.innerText || '').slice(0, max); }
+  lastGood = el.innerHTML; update();
+  el.addEventListener('beforeinput', e => { if (e.inputType.startsWith('insert') && e.inputType !== 'insertFromPaste' && editorTextLen(el) >= max && window.getSelection().isCollapsed) e.preventDefault(); });
+  el.addEventListener('paste', e => { e.preventDefault(); const sel = window.getSelection().toString().length; const room = Math.max(0, max - editorTextLen(el) + sel); const text = (e.clipboardData?.getData('text/plain') || '').slice(0, room); if (text) document.execCommand('insertText', false, text); if (room === 0) toast(`Máximo ${max} caracteres.`); });
+  el.addEventListener('input', () => { if (editorTextLen(el) > max) { el.innerHTML = lastGood; const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); toast(`Máximo ${max} caracteres.`); } else lastGood = el.innerHTML; update(); });
+}
+function descTooLong(id) { const el = $('#' + id); return el && editorTextLen(el) > DESC_LIMITS[id]; }
 function wireEditor(root) {
+  Object.entries(DESC_LIMITS).forEach(([id, max]) => limitEditor($('#' + id), max));
   $$('[data-format]', root).forEach(b => b.onclick = () => { $('#' + b.dataset.target).focus(); document.execCommand(b.dataset.format, false, null); });
   $$('[data-emoji]', root).forEach(b => b.onclick = () => { $('#' + b.dataset.target).focus(); document.execCommand('insertText', false, b.dataset.emoji); });
 }
